@@ -1,0 +1,24 @@
+{
+  "name": "get-order-stack-restaurant-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "kds": "npm run start --workspace=apps/kds",
+    "pos": "npm run start --workspace=apps/pos",
+    "kds:android": "npm run android --workspace=apps/kds",
+    "pos:android": "npm run android --workspace=apps/pos",
+    "build:kds": "npm run build --workspace=apps/kds",
+    "build:pos": "npm run build --workspace=apps/pos"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.2"
+  },
+  "overrides": {
+    "glob": "^10.3.10",
+    "inflight": "npm:lru-cache@^10.2.0"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "GetOrderStack POS",
+    "slug": "get-order-stack-pos",
+    "version": "1.0.0",
+    "orientation": "landscape",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1a1a2e"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.getorderstack.pos"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1a1a2e"
+      },
+      "package": "com.getorderstack.pos"
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
+    "extra": {
+      "apiUrl": "http://localhost:3000",
+      "restaurantId": "96816829-87e3-4b6a-9f6c-613e4b3ab522"
+    }
+  }
+}
