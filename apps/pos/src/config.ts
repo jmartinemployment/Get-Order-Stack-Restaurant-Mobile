@@ -1,38 +1,25 @@
 import Constants from 'expo-constants';
-import { Platform } from 'react-native';
 
 const extra = Constants.expoConfig?.extra || {};
 
-// For web builds, we can use process.env (set at build time)
-// For native builds, we use Constants.expoConfig.extra
-const getEnvVar = (key: string, fallback: string): string => {
-  // Web: Check process.env first (Vercel injects these at build time)
-  if (Platform.OS === 'web' && typeof process !== 'undefined' && process.env) {
-    const envKey = `EXPO_PUBLIC_${key}`;
-    if ((process.env as any)[envKey]) {
-      return (process.env as any)[envKey];
+// Get API URL - check multiple sources
+const getApiUrl = (): string => {
+  // 1. Check Expo's extra config (from app.json or app.config.js)
+  if (extra.apiUrl && extra.apiUrl !== 'http://localhost:3000') {
+    return extra.apiUrl;
+  }
+  
+  // 2. For Vercel/web production builds, check if we're on a deployed domain
+  if (typeof window !== 'undefined' && window.location) {
+    const hostname = window.location.hostname;
+    
+    // If we're on Vercel (not localhost), use production backend
+    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+      return 'https://get-order-stack-restaurant-backend.onrender.com';
     }
   }
   
-  // Native/fallback: Use expo extra config
-  const extraKey = key.toLowerCase().replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-  if (extra[extraKey]) {
-    return extra[extraKey];
-  }
-  
-  return fallback;
-};
-
-// Determine API URL based on environment
-const getApiUrl = (): string => {
-  // Check for explicit environment variable first
-  const envUrl = getEnvVar('API_URL', '');
-  if (envUrl) return envUrl;
-  
-  // Default based on environment
-  if (extra.apiUrl) return extra.apiUrl;
-  
-  // Fallback for development
+  // 3. Fallback for local development
   return 'http://localhost:3000';
 };
 
@@ -55,10 +42,8 @@ export const getApiEndpoint = (restaurantId: string, path: string = ''): string 
   return path ? `${base}${path.startsWith('/') ? path : '/' + path}` : base;
 };
 
-// Log config in development
-if (__DEV__) {
-  console.log('📱 OrderStack POS Config:', {
-    apiUrl: config.apiUrl,
-    enableAiUpsell: config.enableAiUpsell,
-  });
-}
+// Log config (always, for debugging)
+console.log('📱 OrderStack POS Config:', {
+  apiUrl: config.apiUrl,
+  hostname: typeof window !== 'undefined' ? window.location?.hostname : 'server',
+});

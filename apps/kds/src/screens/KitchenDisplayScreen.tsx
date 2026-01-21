@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,80 +6,143 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
+  AppState,
 } from 'react-native';
 
-// Types - will move to @get-order-stack/models
+const API_URL = 'http://localhost:3000/api/restaurant/96816829-87e3-4b6a-9f6c-613e4b3ab522';
+const POLL_INTERVAL = 5000; // 5 seconds
+
+interface OrderItemModifier {
+  id: string;
+  modifierName: string;
+  priceAdjustment: number;
+}
+
 interface OrderItem {
   id: string;
   menuItemName: string;
   quantity: number;
   specialInstructions?: string;
+  status: string;
+  modifiers: OrderItemModifier[];
 }
 
 interface Order {
   id: string;
   orderNumber: string;
   orderType: 'pickup' | 'delivery' | 'dine-in';
-  status: 'confirmed' | 'preparing' | 'ready';
+  status: string;
   items: OrderItem[];
   createdAt: string;
   customerName?: string;
+  customer?: { firstName?: string; lastName?: string };
+  table?: { tableNumber: number };
+  orderItems: OrderItem[];
 }
 
-// Mock data for now - will connect to WebSocket
-const MOCK_ORDERS: Order[] = [
-  {
-    id: '1',
-    orderNumber: 'ORD-001',
-    orderType: 'pickup',
-    status: 'confirmed',
-    customerName: 'John M.',
-    createdAt: new Date(Date.now() - 5 * 60000).toISOString(),
-    items: [
-      { id: '1a', menuItemName: 'Cuban Sandwich', quantity: 2, specialInstructions: 'Extra pickles' },
-      { id: '1b', menuItemName: 'Yuca Fries', quantity: 1 },
-    ],
-  },
-  {
-    id: '2',
-    orderNumber: 'ORD-002',
-    orderType: 'dine-in',
-    status: 'preparing',
-    createdAt: new Date(Date.now() - 12 * 60000).toISOString(),
-    items: [
-      { id: '2a', menuItemName: 'Ropa Vieja', quantity: 1 },
-      { id: '2b', menuItemName: 'Black Beans & Rice', quantity: 1 },
-      { id: '2c', menuItemName: 'Tostones', quantity: 2 },
-    ],
-  },
-  {
-    id: '3',
-    orderNumber: 'ORD-003',
-    orderType: 'delivery',
-    status: 'confirmed',
-    customerName: 'Sarah L.',
-    createdAt: new Date(Date.now() - 2 * 60000).toISOString(),
-    items: [
-      { id: '3a', menuItemName: 'Lechon Asado', quantity: 1 },
-    ],
-  },
-];
-
-const ORDER_TYPE_COLORS = {
+const ORDER_TYPE_COLORS: Record<string, string> = {
   pickup: '#4CAF50',
   delivery: '#2196F3',
   'dine-in': '#FF9800',
 };
 
-const STATUS_LABELS = {
-  confirmed: 'NEW',
-  preparing: 'COOKING',
-  ready: 'READY',
-};
+const STATUS_FLOW = ['pending', 'confirmed', 'preparing', 'ready', 'completed'];
 
 export function KitchenDisplayScreen() {
-  const [orders, setOrders] = useState<Order[]>(MOCK_ORDERS);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const pollInterval = useRef<NodeJS.Timeout | null>(null);
+  const appState = useRef(AppState.currentState);
+
+  // Fetch orders from API
+  const fetchOrders = useCallback(async (showLoading = false) => {
+    try {
+      if (showLoading) setLoading(true);
+      
+      const response = await fetch(`${API_URL}/orders?limit=50`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch orders');
+      }
+      
+      const data = await response.json();
+      
+      // Filter to only show active orders (not completed or cancelled)
+      const activeOrders = data.filter((order: Order) => 
+        !['completed', 'cancelled'].includes(order.status)
+      );
+      
+      // Transform to match our expected format
+      const transformedOrders = activeOrders.map((order: Order) => ({
+        ...order,
+        items: order.orderItems,
+        customerName: order.customer 
+          ? `${order.customer.firstName || ''} ${order.customer.lastName || ''}`.trim()
+          : undefined,
+      }));
+      
+      setOrders(transformedOrders);
+      setLastUpdate(new Date());
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching orders:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load orders');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Update order status via API
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    try {
+      const response = await fetch(`${API_URL}/orders/${orderId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          status: newStatus,
+          changedBy: 'KDS'
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update order status');
+      }
+
+      // Refresh orders after update
+      fetchOrders();
+    } catch (err) {
+      console.error('Error updating order status:', err);
+    }
+  };
+
+  // Initial load and polling setup
+  useEffect(() => {
+    fetchOrders(true);
+
+    // Set up polling
+    pollInterval.current = setInterval(() => {
+      fetchOrders(false);
+    }, POLL_INTERVAL);
+
+    // Handle app state changes
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        fetchOrders(false);
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      if (pollInterval.current) {
+        clearInterval(pollInterval.current);
+      }
+      subscription.remove();
+    };
+  }, [fetchOrders]);
 
   // Update clock every second
   useEffect(() => {
@@ -92,89 +155,155 @@ export function KitchenDisplayScreen() {
     return Math.floor(diff / 60000);
   };
 
-  const handleBumpOrder = (orderId: string) => {
+  const handleBumpOrder = (orderId: string, currentStatus: string) => {
+    // Optimistically update UI
     setOrders((prev) =>
       prev.map((order) => {
         if (order.id !== orderId) return order;
-        if (order.status === 'confirmed') return { ...order, status: 'preparing' };
-        if (order.status === 'preparing') return { ...order, status: 'ready' };
-        return order;
-      }).filter((order) => order.status !== 'ready' || order.id !== orderId)
+        
+        const currentIndex = STATUS_FLOW.indexOf(currentStatus);
+        const nextStatus = STATUS_FLOW[currentIndex + 1];
+        
+        if (!nextStatus || nextStatus === 'completed') {
+          return order;
+        }
+        
+        return { ...order, status: nextStatus };
+      }).filter((order) => order.status !== 'completed')
     );
+
+    // Determine next status
+    const currentIndex = STATUS_FLOW.indexOf(currentStatus);
+    const nextStatus = STATUS_FLOW[currentIndex + 1];
+    
+    if (nextStatus) {
+      updateOrderStatus(orderId, nextStatus);
+    }
   };
 
-  const newOrders = orders.filter((o) => o.status === 'confirmed');
-  const cookingOrders = orders.filter((o) => o.status === 'preparing');
+  // Group orders by status
+  const pendingOrders = orders.filter((o) => o.status === 'pending');
+  const confirmedOrders = orders.filter((o) => o.status === 'confirmed');
+  const preparingOrders = orders.filter((o) => o.status === 'preparing');
   const readyOrders = orders.filter((o) => o.status === 'ready');
+
+  // Combine pending and confirmed as "NEW"
+  const newOrders = [...pendingOrders, ...confirmedOrders];
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#e94560" />
+        <Text style={styles.loadingText}>Loading orders...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>🍳 Kitchen Display</Text>
-        <Text style={styles.headerTime}>
-          {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </Text>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTime}>
+            {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </Text>
+          {lastUpdate && (
+            <Text style={styles.lastUpdate}>
+              Updated {lastUpdate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </Text>
+          )}
+        </View>
         <View style={styles.headerStats}>
           <Text style={styles.statText}>New: {newOrders.length}</Text>
-          <Text style={styles.statText}>Cooking: {cookingOrders.length}</Text>
+          <Text style={styles.statText}>Cooking: {preparingOrders.length}</Text>
           <Text style={styles.statText}>Ready: {readyOrders.length}</Text>
         </View>
+        <TouchableOpacity style={styles.refreshBtn} onPress={() => fetchOrders(false)}>
+          <Text style={styles.refreshBtnText}>🔄</Text>
+        </TouchableOpacity>
       </View>
+
+      {error && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorText}>⚠️ {error}</Text>
+          <TouchableOpacity onPress={() => fetchOrders(true)}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Order Columns */}
       <View style={styles.columnsContainer}>
         {/* New Orders */}
         <View style={styles.column}>
           <View style={[styles.columnHeader, { backgroundColor: '#f44336' }]}>
-            <Text style={styles.columnHeaderText}>🔴 NEW ORDERS</Text>
+            <Text style={styles.columnHeaderText}>🔴 NEW ORDERS ({newOrders.length})</Text>
           </View>
           <ScrollView style={styles.columnContent}>
-            {newOrders.map((order) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                elapsed={getElapsedMinutes(order.createdAt)}
-                onBump={() => handleBumpOrder(order.id)}
-                bumpLabel="START"
-              />
-            ))}
+            {newOrders.length === 0 ? (
+              <View style={styles.emptyColumn}>
+                <Text style={styles.emptyText}>No new orders</Text>
+              </View>
+            ) : (
+              newOrders.map((order) => (
+                <OrderCard
+                  key={order.id}
+                  order={order}
+                  elapsed={getElapsedMinutes(order.createdAt)}
+                  onBump={() => handleBumpOrder(order.id, order.status)}
+                  bumpLabel={order.status === 'pending' ? 'CONFIRM' : 'START'}
+                />
+              ))
+            )}
           </ScrollView>
         </View>
 
         {/* Cooking */}
         <View style={styles.column}>
           <View style={[styles.columnHeader, { backgroundColor: '#FF9800' }]}>
-            <Text style={styles.columnHeaderText}>🟠 COOKING</Text>
+            <Text style={styles.columnHeaderText}>🟠 COOKING ({preparingOrders.length})</Text>
           </View>
           <ScrollView style={styles.columnContent}>
-            {cookingOrders.map((order) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                elapsed={getElapsedMinutes(order.createdAt)}
-                onBump={() => handleBumpOrder(order.id)}
-                bumpLabel="DONE"
-              />
-            ))}
+            {preparingOrders.length === 0 ? (
+              <View style={styles.emptyColumn}>
+                <Text style={styles.emptyText}>Nothing cooking</Text>
+              </View>
+            ) : (
+              preparingOrders.map((order) => (
+                <OrderCard
+                  key={order.id}
+                  order={order}
+                  elapsed={getElapsedMinutes(order.createdAt)}
+                  onBump={() => handleBumpOrder(order.id, order.status)}
+                  bumpLabel="DONE"
+                />
+              ))
+            )}
           </ScrollView>
         </View>
 
         {/* Ready */}
         <View style={styles.column}>
           <View style={[styles.columnHeader, { backgroundColor: '#4CAF50' }]}>
-            <Text style={styles.columnHeaderText}>🟢 READY</Text>
+            <Text style={styles.columnHeaderText}>🟢 READY ({readyOrders.length})</Text>
           </View>
           <ScrollView style={styles.columnContent}>
-            {readyOrders.map((order) => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                elapsed={getElapsedMinutes(order.createdAt)}
-                onBump={() => handleBumpOrder(order.id)}
-                bumpLabel="BUMP"
-              />
-            ))}
+            {readyOrders.length === 0 ? (
+              <View style={styles.emptyColumn}>
+                <Text style={styles.emptyText}>No orders ready</Text>
+              </View>
+            ) : (
+              readyOrders.map((order) => (
+                <OrderCard
+                  key={order.id}
+                  order={order}
+                  elapsed={getElapsedMinutes(order.createdAt)}
+                  onBump={() => handleBumpOrder(order.id, order.status)}
+                  bumpLabel="COMPLETE"
+                />
+              ))
+            )}
           </ScrollView>
         </View>
       </View>
@@ -191,6 +320,7 @@ interface OrderCardProps {
 
 function OrderCard({ order, elapsed, onBump, bumpLabel }: OrderCardProps) {
   const isUrgent = elapsed > 10;
+  const items = order.items || order.orderItems || [];
 
   return (
     <View style={[styles.orderCard, isUrgent && styles.orderCardUrgent]}>
@@ -201,12 +331,15 @@ function OrderCard({ order, elapsed, onBump, bumpLabel }: OrderCardProps) {
           {order.customerName && (
             <Text style={styles.customerName}>{order.customerName}</Text>
           )}
+          {order.table && (
+            <Text style={styles.tableNumber}>Table {order.table.tableNumber}</Text>
+          )}
         </View>
         <View style={styles.orderMeta}>
           <View
             style={[
               styles.orderTypeBadge,
-              { backgroundColor: ORDER_TYPE_COLORS[order.orderType] },
+              { backgroundColor: ORDER_TYPE_COLORS[order.orderType] || '#666' },
             ]}
           >
             <Text style={styles.orderTypeText}>
@@ -221,11 +354,16 @@ function OrderCard({ order, elapsed, onBump, bumpLabel }: OrderCardProps) {
 
       {/* Order Items */}
       <View style={styles.orderItems}>
-        {order.items.map((item) => (
+        {items.map((item) => (
           <View key={item.id} style={styles.orderItem}>
             <Text style={styles.itemQuantity}>{item.quantity}x</Text>
             <View style={styles.itemDetails}>
               <Text style={styles.itemName}>{item.menuItemName}</Text>
+              {item.modifiers && item.modifiers.length > 0 && (
+                <Text style={styles.itemModifiers}>
+                  {item.modifiers.map(m => m.modifierName).join(', ')}
+                </Text>
+              )}
               {item.specialInstructions && (
                 <Text style={styles.itemInstructions}>
                   ⚠️ {item.specialInstructions}
@@ -238,7 +376,10 @@ function OrderCard({ order, elapsed, onBump, bumpLabel }: OrderCardProps) {
 
       {/* Bump Button */}
       <TouchableOpacity
-        style={styles.bumpButton}
+        style={[
+          styles.bumpButton,
+          bumpLabel === 'COMPLETE' && styles.bumpButtonComplete,
+        ]}
         onPress={onBump}
         activeOpacity={0.7}
       >
@@ -249,12 +390,22 @@ function OrderCard({ order, elapsed, onBump, bumpLabel }: OrderCardProps) {
 }
 
 const { width } = Dimensions.get('window');
-const COLUMN_WIDTH = (width - 40) / 3;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#1a1a2e',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#fff',
+    marginTop: 12,
+    fontSize: 16,
   },
   header: {
     flexDirection: 'row',
@@ -271,10 +422,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff',
   },
+  headerCenter: {
+    alignItems: 'center',
+  },
   headerTime: {
     fontSize: 32,
     fontWeight: 'bold',
     color: '#e94560',
+  },
+  lastUpdate: {
+    fontSize: 11,
+    color: '#666',
+    marginTop: 2,
   },
   headerStats: {
     flexDirection: 'row',
@@ -284,6 +443,31 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#fff',
     fontWeight: '600',
+  },
+  refreshBtn: {
+    padding: 8,
+    backgroundColor: '#0f3460',
+    borderRadius: 8,
+  },
+  refreshBtnText: {
+    fontSize: 20,
+  },
+  errorBanner: {
+    backgroundColor: '#f44336',
+    padding: 10,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  errorText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  retryText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    textDecorationLine: 'underline',
   },
   columnsContainer: {
     flex: 1,
@@ -302,13 +486,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   columnHeaderText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#fff',
   },
   columnContent: {
     flex: 1,
     padding: 8,
+  },
+  emptyColumn: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyText: {
+    color: '#666',
+    fontSize: 14,
   },
   orderCard: {
     backgroundColor: '#fff',
@@ -330,13 +524,19 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e0e0e0',
   },
   orderNumber: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#1a1a2e',
   },
   customerName: {
     fontSize: 14,
     color: '#666',
+    marginTop: 2,
+  },
+  tableNumber: {
+    fontSize: 14,
+    color: '#FF9800',
+    fontWeight: '600',
     marginTop: 2,
   },
   orderMeta: {
@@ -349,7 +549,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   orderTypeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 'bold',
     color: '#fff',
   },
@@ -380,17 +580,26 @@ const styles = StyleSheet.create({
   itemName: {
     fontSize: 16,
     color: '#333',
+    fontWeight: '500',
+  },
+  itemModifiers: {
+    fontSize: 13,
+    color: '#666',
+    marginTop: 2,
   },
   itemInstructions: {
     fontSize: 14,
     color: '#f44336',
     fontWeight: '600',
-    marginTop: 2,
+    marginTop: 4,
   },
   bumpButton: {
     backgroundColor: '#1a1a2e',
     paddingVertical: 16,
     alignItems: 'center',
+  },
+  bumpButtonComplete: {
+    backgroundColor: '#4CAF50',
   },
   bumpButtonText: {
     fontSize: 18,
