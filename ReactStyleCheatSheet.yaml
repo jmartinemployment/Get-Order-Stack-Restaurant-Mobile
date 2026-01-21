@@ -1,0 +1,39 @@
+// Layout
+flex: 1                    // fill available space
+flexDirection: 'row'       // horizontal (default is 'column')
+justifyContent: 'center'   // main axis alignment
+alignItems: 'center'       // cross axis alignment
+gap: 10                    // spacing between children
+
+// Sizing
+width: 100                 // pixels (no 'px')
+width: '50%'               // percentage
+height: 'auto'             // doesn't work well - avoid
+
+// Spacing
+padding: 16
+paddingHorizontal: 16      // left + right
+paddingVertical: 8         // top + bottom
+margin: 10
+marginTop: 20
+
+// Text
+fontSize: 16
+fontWeight: 'bold'         // must be string
+color: '#fff'
+textAlign: 'center'
+
+// Borders
+borderWidth: 1
+borderColor: '#ccc'
+borderRadius: 8
+
+// Background
+backgroundColor: '#1a1a2e'
+
+// Position (use sparingly)
+position: 'absolute'
+top: 0
+left: 0
+right: 0
+bottom: 0

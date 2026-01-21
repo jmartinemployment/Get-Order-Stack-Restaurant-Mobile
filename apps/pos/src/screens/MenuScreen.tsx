@@ -304,7 +304,11 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
                 onPress={() => handleItemPress(item)}
               >
                 {item.image && (
-                  <Image source={{ uri: item.image }} style={styles.menuItemImage} />
+                  <Image 
+                    source={{ uri: item.image }} 
+                    style={styles.menuItemImage} 
+                    resizeMode="cover"
+                  />
                 )}
                 <View style={styles.menuItemInfo}>
                   <Text style={styles.menuItemName} numberOfLines={2}>
@@ -668,9 +672,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   menuItemImage: {
-    width: '100%',
-    height: 100,
-    backgroundColor: '#0f3460',
+    width: 64,
+    height: 64,
+    marginLeft:'auto',
+    marginRight:'auto',
+    marginTop:12,
+    backgroundColor: '#fff',
   },
   menuItemInfo: {
     padding: 12,

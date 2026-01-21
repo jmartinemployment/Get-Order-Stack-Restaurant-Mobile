@@ -8,7 +8,23 @@ React Native monorepo containing two tablet applications for restaurant operatio
 - **POS (Point of Sale)** - Order taking and checkout for front-of-house staff
 - **KDS (Kitchen Display System)** - Order management for kitchen staff
 
-## Current Status: ✅ Committed to GitHub
+## Current Status: ✅ DEPLOYED TO PRODUCTION
+
+---
+
+## 🚀 Live URLs
+
+| Service | URL | Status |
+|---------|-----|--------|
+| **POS App** | https://get-order-stack-restaurant-mobile.vercel.app | ✅ Live |
+| **Backend API** | https://get-order-stack-restaurant-backend.onrender.com | ✅ Live |
+| **KDS App** | Not yet deployed | 🔴 Pending |
+
+### Test Restaurant IDs
+| Restaurant | ID |
+|------------|-----|
+| Demo Restaurant | `96816829-87e3-4b6a-9f6c-613e4b3ab522` |
+| Taipa (more menu items) | `f2cfe8dd-48f3-4596-ab1e-22a28b23ad38` |
 
 ---
 
@@ -72,7 +88,18 @@ Get-Order-Stack-Restaurant-Mobile/
 
 ## 🔴 PRIORITY: Action Items for Next Developer
 
-### 1. **LOW PRIORITY: Supabase RLS Warning (Known Issue)**
+### 1. **HIGH PRIORITY: Deploy KDS App**
+KDS needs to be deployed to Vercel like the POS app.
+
+### 2. **HIGH PRIORITY: Update KDS for Dynamic Restaurant**
+The KDS app still has a hardcoded restaurant ID. Need to:
+- Apply same pattern as POS (RestaurantSetupScreen, config.ts)
+- Update dependencies to match POS versions
+
+**Files needing update (KDS):**
+- `/apps/kds/src/screens/KitchenDisplayScreen.tsx` - Still has hardcoded ID
+
+### 3. **LOW PRIORITY: Supabase RLS Warning (Known Issue)**
 Supabase Security Advisor flags `public._prisma_migrations` table for RLS. 
 
 **Status:** RLS has been enabled and policy created, but Splinter (Supabase's linter) continues to flag it. This appears to be a false positive or cache issue.
@@ -87,36 +114,6 @@ CREATE POLICY "Service role only" ON public._prisma_migrations
 
 **Why we're moving on:** The `_prisma_migrations` table contains only migration metadata (names, timestamps, checksums) - no sensitive data. This is a low-risk item that can be revisited post-demo if needed.
 
-### 2. **HIGH PRIORITY: Update KDS Dependencies**
-The KDS app needs its dependencies updated to match POS. The POS app was updated to latest versions but KDS was not.
-
-```bash
-cd apps/kds
-# Update package.json to match POS versions:
-# - expo: ~54.0.31
-# - react-native: 0.81.5
-# - etc.
-npm install
-```
-
-### 3. **HIGH PRIORITY: Complete Database Connection Flow**
-Dynamic restaurant selection is partially implemented. Need to:
-- Install AsyncStorage in POS: `npm install @react-native-async-storage/async-storage`
-- Test RestaurantSetupScreen flow
-- Apply same pattern to KDS app
-
-**Files updated (POS):**
-- `/apps/pos/src/config.ts` - Environment-based API URL
-- `/apps/pos/src/context/RestaurantContext.tsx` - NEW
-- `/apps/pos/src/screens/RestaurantSetupScreen.tsx` - NEW
-- `/apps/pos/src/screens/MenuScreen.tsx` - Now accepts restaurantId prop
-- `/apps/pos/src/components/CheckoutModal.tsx` - Now accepts restaurantId prop
-- `/apps/pos/src/screens/OrderHistoryScreen.tsx` - Now accepts restaurantId prop
-- `/apps/pos/App.tsx` - Orchestrates setup flow
-
-**Files still needing update (KDS):**
-- `/apps/kds/src/screens/KitchenDisplayScreen.tsx` - Still has hardcoded ID
-
 ### 4. **WebSocket Integration (Future)**
 Replace polling with WebSocket for real-time updates:
 - Backend already has WebSocket capability
@@ -125,26 +122,41 @@ Replace polling with WebSocket for real-time updates:
 
 ---
 
-## Deployment Status
+## Deployment Details
 
-### Backend (Render.com)
-- `render.yaml` created but not yet deployed
-- Environment variables needed:
-  - `DATABASE_URL` (Supabase connection string)
-  - `DIRECT_URL` (Supabase direct connection)
-  - `ANTHROPIC_API_KEY`
-  - `STRIPE_SECRET_KEY`
-  - `CORS_ORIGINS` (frontend URLs)
+### Backend (Render.com) ✅ DEPLOYED
+- **URL:** https://get-order-stack-restaurant-backend.onrender.com
+- **Health Check:** https://get-order-stack-restaurant-backend.onrender.com/health
+- **Instance:** Free tier (sleeps after 15 min inactivity, ~30-60s cold start)
 
-### Frontend (Vercel)
-- Not yet deployed
-- Need to set `EXPO_PUBLIC_API_URL` environment variable
+**Environment Variables Set:**
+| Key | Description |
+|-----|-------------|
+| `NODE_ENV` | `production` |
+| `PORT` | `3000` |
+| `DATABASE_URL` | Supabase pooler connection (port 6543) |
+| `DIRECT_URL` | Supabase direct connection (port 5432) |
+| `ANTHROPIC_API_KEY` | Claude AI API key |
+| `STRIPE_SECRET_KEY` | Stripe test key |
+| `STRIPE_WEBHOOK_SECRET` | Placeholder (webhooks not configured) |
+| `CORS_ORIGINS` | `http://localhost:8081,http://localhost:19006,https://get-order-stack-restaurant-mobile.vercel.app` |
+
+### POS Frontend (Vercel) ✅ DEPLOYED
+- **URL:** https://get-order-stack-restaurant-mobile.vercel.app
+- **Root Directory:** `apps/pos`
+- **Build Command:** `npx expo export --platform web`
+- **Output Directory:** `dist`
+
+**Config Notes:**
+- API URL detection is automatic based on hostname (see `/apps/pos/src/config.ts`)
+- If on localhost → uses `http://localhost:3000`
+- If on Vercel → uses `https://get-order-stack-restaurant-backend.onrender.com`
 
 ---
 
 ## Backend API Reference
 
-**Base URL:** `http://localhost:3000/api/restaurant/{restaurantId}`
+**Production Base URL:** `https://get-order-stack-restaurant-backend.onrender.com/api/restaurant/{restaurantId}`
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -193,9 +205,9 @@ pending → confirmed → preparing → ready → completed
 ### Prerequisites
 - Node.js 18+
 - Expo CLI (`npm install -g expo-cli`)
-- Backend running on localhost:3000
+- Backend running on localhost:3000 (or use production URL)
 
-### Running POS App
+### Running POS App Locally
 ```bash
 cd apps/pos
 npm install
@@ -205,7 +217,7 @@ npm run ios    # iOS Simulator
 npm run android
 ```
 
-### Running KDS App
+### Running KDS App Locally
 ```bash
 cd apps/kds
 npm install
@@ -215,6 +227,11 @@ npm run web
 ---
 
 ## Technical Notes
+
+### Styling
+- Uses **React Native StyleSheet** (not Tailwind, Bootstrap, or any CSS library)
+- Styles are JavaScript objects with camelCase properties
+- When rendered to web, generates inline styles or hashed class names
 
 ### Cart State Management
 Uses React Context with useReducer pattern. Supports:
@@ -237,19 +254,7 @@ Currently hardcoded at 6.5% (Florida). Backend supports per-restaurant tax rates
 
 ---
 
-## Known Issues / Tech Debt
-
-1. **Supabase RLS warning** - Linter false positive on _prisma_migrations (RLS enabled, documented)
-2. **KDS dependencies outdated** - Need to match POS versions
-3. **KDS hardcoded restaurant ID** - Needs same setup flow as POS
-4. **No offline support** - Orders fail if network unavailable
-5. **No sound notifications** - KDS should beep for new orders
-6. **Receipt printing mobile** - Needs actual printer SDK (Star Micronics, Epson, etc.)
-7. **No authentication** - Anyone with restaurant ID can access
-
----
-
-## Database Schema Notes
+## Database Notes
 
 ### Supabase/PostgreSQL
 - Managed via Prisma ORM
@@ -257,29 +262,36 @@ Currently hardcoded at 6.5% (Florida). Backend supports per-restaurant tax rates
 - `DATABASE_URL` uses pooler connection (port 6543)
 - `DIRECT_URL` uses direct connection (port 5432) for migrations
 
-### Key Tables
-- `Restaurant` - Multi-tenant root
-- `MenuCategory`, `MenuItem`, `ModifierGroup`, `Modifier` - Menu structure
-- `Order`, `OrderItem`, `OrderItemModifier` - Order data
-- `Customer` - Customer records
-- `RestaurantTable` - Table management
+### Key Tables (use lowercase in SQL queries)
+```sql
+SELECT id, name, slug FROM restaurants;  -- List all restaurants
+```
+
+| Table | Description |
+|-------|-------------|
+| `restaurants` | Multi-tenant root |
+| `menu_categories` | Menu sections |
+| `menu_items` | Food/drink items |
+| `modifier_groups` | Groups of modifiers |
+| `modifiers` | Individual modifier options |
+| `orders` | Order records |
+| `order_items` | Items within orders |
+| `order_item_modifiers` | Modifiers on order items |
+| `customers` | Customer records |
+| `restaurant_tables` | Table management |
 
 ---
 
-## File Reference
+## Known Issues / Tech Debt
 
-### Key Files Modified Recently
-
-| File | Changes |
-|------|---------|
-| `apps/pos/App.tsx` | Restaurant selection orchestration |
-| `apps/pos/src/config.ts` | Environment-based configuration |
-| `apps/pos/src/context/RestaurantContext.tsx` | **NEW** - Restaurant state management |
-| `apps/pos/src/screens/RestaurantSetupScreen.tsx` | **NEW** - Onboarding UI |
-| `apps/pos/src/screens/MenuScreen.tsx` | Dynamic restaurantId, header with logout |
-| `apps/pos/src/components/CheckoutModal.tsx` | Dynamic restaurantId |
-| `apps/pos/src/screens/OrderHistoryScreen.tsx` | Dynamic restaurantId |
-| `apps/kds/src/screens/KitchenDisplayScreen.tsx` | Live API (still hardcoded ID) |
+1. **Supabase RLS warning** - Linter false positive on _prisma_migrations (RLS enabled, documented)
+2. **KDS not deployed** - Needs Vercel deployment
+3. **KDS hardcoded restaurant ID** - Needs same setup flow as POS
+4. **No offline support** - Orders fail if network unavailable
+5. **No sound notifications** - KDS should beep for new orders
+6. **Receipt printing mobile** - Needs actual printer SDK (Star Micronics, Epson, etc.)
+7. **No authentication** - Anyone with restaurant ID can access
+8. **Render free tier** - Backend sleeps after 15 min, cold start delay
 
 ---
 
@@ -287,19 +299,18 @@ Currently hardcoded at 6.5% (Florida). Backend supports per-restaurant tax rates
 
 1. **Menu Engineering Report** - AI-powered profitability analysis
 2. **POS Upsell Prompts** - Subtle AI suggestions for staff
-3. **Inventory Tracking** - Basic stock management
-4. **AI Sales Insights Dashboard** - Daily performance analysis
-5. **Tablet UI Optimization** - Android tablet testing
+3. **AI Sales Insights Dashboard** - Daily performance analysis
+4. **Tablet UI Optimization** - Android tablet testing
 
 ---
 
 ## Contact / Resources
 
 - **Backend Repo:** Get-Order-Stack-Restaurant-Backend
-- **Frontend Repo:** Get-Order-Stack-Restaurant-Frontend
-- **API Docs:** See backend `/docs` folder
+- **Mobile Repo:** Get-Order-Stack-Restaurant-Mobile
 - **Product Vision:** See `/docs/PRODUCT_VISION.md`
 - **Interview Guide:** See `/docs/INTERVIEW_GUIDE.md`
+- **Demo Checklist:** See `/docs/PRE_DEMO_CHECKLIST.md`
 
 ---
 
