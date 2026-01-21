@@ -14,8 +14,13 @@ import { useCart, CartItem, CartModifier } from '../context/CartContext';
 import { CheckoutModal } from '../components/CheckoutModal';
 import { ReceiptModal } from '../components/ReceiptPrinter';
 import { OrderHistoryScreen } from './OrderHistoryScreen';
+import { config } from '../config';
 
-const API_URL = 'http://localhost:3000/api/restaurant/96816829-87e3-4b6a-9f6c-613e4b3ab522';
+interface MenuScreenProps {
+  restaurantId: string;
+  restaurantName: string;
+  onLogout: () => void;
+}
 
 interface Modifier {
   id: string;
@@ -53,7 +58,8 @@ interface MenuCategory {
   items: MenuItem[];
 }
 
-export function MenuScreen() {
+export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScreenProps) {
+  const API_URL = `${config.apiUrl}/api/restaurant/${restaurantId}`;
   const [menu, setMenu] = useState<MenuCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -243,6 +249,19 @@ export function MenuScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerLogo}>🍽️</Text>
+          <Text style={styles.headerTitle}>{restaurantName}</Text>
+        </View>
+        <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
+            <Text style={styles.logoutBtnText}>Switch Restaurant</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* Category Tabs */}
       <View style={styles.categoryBar}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
@@ -468,6 +487,7 @@ export function MenuScreen() {
         visible={showCheckout}
         onClose={() => setShowCheckout(false)}
         onSuccess={handleCheckoutSuccess}
+        restaurantId={restaurantId}
       />
 
       {/* Order Success Modal */}
@@ -511,6 +531,7 @@ export function MenuScreen() {
         visible={showOrderHistory}
         onClose={() => setShowOrderHistory(false)}
         onReprint={handleReprintFromHistory}
+        restaurantId={restaurantId}
       />
     </View>
   );
@@ -522,6 +543,43 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#0f3460',
+    borderBottomWidth: 1,
+    borderBottomColor: '#16213e',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  headerLogo: {
+    fontSize: 24,
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logoutBtn: {
+    backgroundColor: '#1a1a2e',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  logoutBtnText: {
+    color: '#999',
+    fontSize: 13,
   },
   centered: {
     flex: 1,

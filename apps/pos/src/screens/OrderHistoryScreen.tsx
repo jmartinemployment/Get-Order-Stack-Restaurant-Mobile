@@ -9,8 +9,7 @@ import {
   Dimensions,
   RefreshControl,
 } from 'react-native';
-
-const API_URL = 'http://localhost:3000/api/restaurant/96816829-87e3-4b6a-9f6c-613e4b3ab522';
+import { config } from '../config';
 
 interface OrderItem {
   id: string;
@@ -40,6 +39,7 @@ interface OrderHistoryScreenProps {
   visible: boolean;
   onClose: () => void;
   onReprint: (order: Order) => void;
+  restaurantId: string;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -57,7 +57,8 @@ const ORDER_TYPE_COLORS: Record<string, string> = {
   'dine-in': '#FF9800',
 };
 
-export function OrderHistoryScreen({ visible, onClose, onReprint }: OrderHistoryScreenProps) {
+export function OrderHistoryScreen({ visible, onClose, onReprint, restaurantId }: OrderHistoryScreenProps) {
+  const API_URL = `${config.apiUrl}/api/restaurant/${restaurantId}`;
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

@@ -10,8 +10,8 @@ import {
   Dimensions,
 } from 'react-native';
 import { useCart, OrderType } from '../context/CartContext';
+import { config } from '../config';
 
-const API_URL = 'http://localhost:3000/api/restaurant/96816829-87e3-4b6a-9f6c-613e4b3ab522';
 const TAX_RATE = 0.065; // 6.5% Florida
 
 interface Table {
@@ -26,9 +26,11 @@ interface CheckoutModalProps {
   visible: boolean;
   onClose: () => void;
   onSuccess: (orderNumber: string, orderData: any) => void;
+  restaurantId: string;
 }
 
-export function CheckoutModal({ visible, onClose, onSuccess }: CheckoutModalProps) {
+export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: CheckoutModalProps) {
+  const API_URL = `${config.apiUrl}/api/restaurant/${restaurantId}`;
   const { state, subtotal, clearCart } = useCart();
   const [orderType, setOrderType] = useState<OrderType>('pickup');
   const [customerName, setCustomerName] = useState('');
