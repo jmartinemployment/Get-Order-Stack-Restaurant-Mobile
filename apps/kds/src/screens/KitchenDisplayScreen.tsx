@@ -9,9 +9,15 @@ import {
   ActivityIndicator,
   AppState,
 } from 'react-native';
+import { API_BASE_URL } from '../config';
 
-const API_URL = 'http://localhost:3000/api/restaurant/96816829-87e3-4b6a-9f6c-613e4b3ab522';
 const POLL_INTERVAL = 5000; // 5 seconds
+
+interface KitchenDisplayScreenProps {
+  restaurantId: string;
+  restaurantName: string;
+  onSwitchRestaurant: () => void;
+}
 
 interface OrderItemModifier {
   id: string;
@@ -49,7 +55,9 @@ const ORDER_TYPE_COLORS: Record<string, string> = {
 
 const STATUS_FLOW = ['pending', 'confirmed', 'preparing', 'ready', 'completed'];
 
-export function KitchenDisplayScreen() {
+export function KitchenDisplayScreen({ restaurantId, restaurantName, onSwitchRestaurant }: KitchenDisplayScreenProps) {
+  const API_URL = `${API_BASE_URL}/api/restaurant/${restaurantId}`;
+  
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -94,7 +102,7 @@ export function KitchenDisplayScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [API_URL]);
 
   // Update order status via API
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
@@ -203,7 +211,10 @@ export function KitchenDisplayScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>🍳 Kitchen Display</Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>🍳 Kitchen Display</Text>
+          <Text style={styles.restaurantName}>{restaurantName}</Text>
+        </View>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTime}>
             {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -219,9 +230,14 @@ export function KitchenDisplayScreen() {
           <Text style={styles.statText}>Cooking: {preparingOrders.length}</Text>
           <Text style={styles.statText}>Ready: {readyOrders.length}</Text>
         </View>
-        <TouchableOpacity style={styles.refreshBtn} onPress={() => fetchOrders(false)}>
-          <Text style={styles.refreshBtnText}>🔄</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.refreshBtn} onPress={() => fetchOrders(false)}>
+            <Text style={styles.refreshBtnText}>🔄</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.switchBtn} onPress={onSwitchRestaurant}>
+            <Text style={styles.switchBtnText}>Switch</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {error && (
@@ -417,13 +433,22 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderBottomColor: '#0f3460',
   },
+  headerLeft: {
+    flex: 1,
+  },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
   },
+  restaurantName: {
+    fontSize: 14,
+    color: '#888',
+    marginTop: 2,
+  },
   headerCenter: {
     alignItems: 'center',
+    flex: 1,
   },
   headerTime: {
     fontSize: 32,
@@ -438,11 +463,17 @@ const styles = StyleSheet.create({
   headerStats: {
     flexDirection: 'row',
     gap: 20,
+    flex: 1,
+    justifyContent: 'center',
   },
   statText: {
     fontSize: 16,
     color: '#fff',
     fontWeight: '600',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
   },
   refreshBtn: {
     padding: 8,
@@ -451,6 +482,17 @@ const styles = StyleSheet.create({
   },
   refreshBtnText: {
     fontSize: 20,
+  },
+  switchBtn: {
+    padding: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#0f3460',
+    borderRadius: 8,
+  },
+  switchBtnText: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: '600',
   },
   errorBanner: {
     backgroundColor: '#f44336',

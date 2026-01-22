@@ -9,11 +9,14 @@ import {
   Image,
   Dimensions,
   TextInput,
+  useWindowDimensions,
 } from 'react-native';
 import { useCart, CartItem, CartModifier } from '../context/CartContext';
 import { CheckoutModal } from '../components/CheckoutModal';
 import { ReceiptModal } from '../components/ReceiptPrinter';
 import { OrderHistoryScreen } from './OrderHistoryScreen';
+import { PrimaryCategoryNav, PrimaryCategory } from '../components/PrimaryCategoryNav';
+import { CategoryManagementScreen } from './CategoryManagementScreen';
 import { config } from '../config';
 
 interface MenuScreenProps {
@@ -50,51 +53,91 @@ interface MenuItem {
   modifierGroups: ModifierGroup[];
 }
 
-interface MenuCategory {
+interface Subcategory {
   id: string;
   name: string;
+  nameEs?: string;
+  nameEn?: string;
   description?: string;
   image?: string;
   items: MenuItem[];
 }
 
+interface GroupedPrimaryCategory extends PrimaryCategory {
+  subcategories: Subcategory[];
+}
+
 export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScreenProps) {
   const API_URL = `${config.apiUrl}/api/restaurant/${restaurantId}`;
-  const [menu, setMenu] = useState<MenuCategory[]>([]);
+  const { width: screenWidth } = useWindowDimensions();
+  
+  // Menu data - now hierarchical
+  const [groupedMenu, setGroupedMenu] = useState<GroupedPrimaryCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  
+  // Selection state
+  const [selectedPrimaryId, setSelectedPrimaryId] = useState<string | null>(null);
+  const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<string | null>(null);
+  
+  // Item detail modal
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [selectedModifiers, setSelectedModifiers] = useState<Record<string, string[]>>({});
   const [specialInstructions, setSpecialInstructions] = useState('');
+  const [quantity, setQuantity] = useState(1);
+  
+  // Other modals
   const [showCheckout, setShowCheckout] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   const [receiptData, setReceiptData] = useState<any>(null);
   const [showReceipt, setShowReceipt] = useState(false);
   const [showOrderHistory, setShowOrderHistory] = useState(false);
-  const [quantity, setQuantity] = useState(1);
-  const [editingCartItem, setEditingCartItem] = useState<string | null>(null);
+  const [showCategoryManagement, setShowCategoryManagement] = useState(false);
+
+  // Language setting (could be from context/settings in the future)
+  const [language, setLanguage] = useState<'es' | 'en'>('en');
 
   const { addItem, removeItem, updateQuantity, clearCart, state, subtotal, itemCount } = useCart();
 
   useEffect(() => {
-    fetchMenu();
+    fetchGroupedMenu();
   }, []);
 
-  async function fetchMenu() {
+  async function fetchGroupedMenu() {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/menu`);
+      const response = await fetch(`${API_URL}/menu/grouped?lang=${language}`);
       if (!response.ok) throw new Error('Failed to fetch menu');
-      const data = await response.json();
-      setMenu(data);
+      const data: GroupedPrimaryCategory[] = await response.json();
+      setGroupedMenu(data);
+      
+      // Set initial selections
       if (data.length > 0) {
-        setSelectedCategory(data[0].id);
+        setSelectedPrimaryId(data[0].id);
+        if (data[0].subcategories.length > 0) {
+          setSelectedSubcategoryId(data[0].subcategories[0].id);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load menu');
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Get current primary category and its subcategories
+  const currentPrimary = groupedMenu.find((p) => p.id === selectedPrimaryId);
+  const currentSubcategories = currentPrimary?.subcategories || [];
+  const currentSubcategory = currentSubcategories.find((s) => s.id === selectedSubcategoryId);
+
+  function handlePrimarySelect(category: PrimaryCategory) {
+    setSelectedPrimaryId(category.id);
+    // Auto-select first subcategory of the new primary
+    const primary = groupedMenu.find((p) => p.id === category.id);
+    if (primary && primary.subcategories.length > 0) {
+      setSelectedSubcategoryId(primary.subcategories[0].id);
+    } else {
+      setSelectedSubcategoryId(null);
     }
   }
 
@@ -177,7 +220,6 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
 
   function handleRemoveFromCart(itemId: string) {
     removeItem(itemId);
-    setEditingCartItem(null);
   }
 
   function handleUpdateCartQuantity(itemId: string, newQuantity: number) {
@@ -186,7 +228,6 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
     } else {
       updateQuantity(itemId, newQuantity);
     }
-    setEditingCartItem(null);
   }
 
   function handleCheckoutSuccess(orderNumber: string, data: any) {
@@ -225,7 +266,12 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
     setShowReceipt(true);
   }
 
-  const currentCategory = menu.find((c) => c.id === selectedCategory);
+  function toggleLanguage() {
+    const newLang = language === 'en' ? 'es' : 'en';
+    setLanguage(newLang);
+    // Refetch menu with new language
+    fetchGroupedMenu();
+  }
 
   if (loading) {
     return (
@@ -240,7 +286,7 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
     return (
       <View style={styles.centered}>
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={fetchMenu}>
+        <TouchableOpacity style={styles.retryButton} onPress={fetchGroupedMenu}>
           <Text style={styles.retryButtonText}>Retry</Text>
         </TouchableOpacity>
       </View>
@@ -256,31 +302,48 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
           <Text style={styles.headerTitle}>{restaurantName}</Text>
         </View>
         <View style={styles.headerRight}>
+          <TouchableOpacity style={styles.langToggle} onPress={toggleLanguage}>
+            <Text style={styles.langToggleText}>{language === 'en' ? '🇺🇸 EN' : '🇪🇸 ES'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.adminBtn}
+            onPress={() => setShowCategoryManagement(true)}
+          >
+            <Text style={styles.adminBtnText}>⚙️ Categories</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
             <Text style={styles.logoutBtnText}>Switch Restaurant</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Category Tabs */}
-      <View style={styles.categoryBar}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
-          {menu.map((category) => (
+      {/* Primary Category Navigation Pills */}
+      <PrimaryCategoryNav
+        categories={groupedMenu}
+        selectedId={selectedPrimaryId}
+        onSelect={handlePrimarySelect}
+        language={language}
+      />
+
+      {/* Subcategory Tabs */}
+      <View style={styles.subcategoryBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.subcategoryScroll}>
+          {currentSubcategories.map((subcategory) => (
             <TouchableOpacity
-              key={category.id}
+              key={subcategory.id}
               style={[
-                styles.categoryTab,
-                selectedCategory === category.id && styles.categoryTabActive,
+                styles.subcategoryTab,
+                selectedSubcategoryId === subcategory.id && styles.subcategoryTabActive,
               ]}
-              onPress={() => setSelectedCategory(category.id)}
+              onPress={() => setSelectedSubcategoryId(subcategory.id)}
             >
               <Text
                 style={[
-                  styles.categoryTabText,
-                  selectedCategory === category.id && styles.categoryTabTextActive,
+                  styles.subcategoryTabText,
+                  selectedSubcategoryId === subcategory.id && styles.subcategoryTabTextActive,
                 ]}
               >
-                {category.name}
+                {subcategory.name}
               </Text>
             </TouchableOpacity>
           ))}
@@ -296,11 +359,16 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
       <View style={styles.mainContent}>
         {/* Menu Items Grid */}
         <ScrollView style={styles.menuGrid} contentContainerStyle={styles.menuGridContent}>
+          {/* Show subcategory name as header */}
+          {currentSubcategory && (
+            <Text style={styles.subcategoryHeader}>{currentSubcategory.name}</Text>
+          )}
+          
           <View style={styles.itemsRow}>
-            {currentCategory?.items.map((item) => (
+            {currentSubcategory?.items.map((item) => (
               <TouchableOpacity
                 key={item.id}
-                style={styles.menuItemCard}
+                style={[styles.menuItemCard, { width: (screenWidth * 0.7 - 48) / 3 }]}
                 onPress={() => handleItemPress(item)}
               >
                 {item.image && (
@@ -324,6 +392,20 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
               </TouchableOpacity>
             ))}
           </View>
+
+          {/* If no items in subcategory */}
+          {currentSubcategory && currentSubcategory.items.length === 0 && (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No items in this category</Text>
+            </View>
+          )}
+
+          {/* If no subcategory selected */}
+          {!currentSubcategory && currentSubcategories.length === 0 && (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No subcategories available</Text>
+            </View>
+          )}
         </ScrollView>
 
         {/* Cart Summary */}
@@ -415,7 +497,7 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
             <ScrollView style={styles.modalBody}>
               <Text style={styles.modalDescription}>{selectedItem.description}</Text>
               <Text style={styles.modalBasePrice}>
-              Base price: ${Number(selectedItem.price).toFixed(2)}
+                Base price: ${Number(selectedItem.price).toFixed(2)}
               </Text>
 
               {selectedItem.modifierGroups.map((group) => (
@@ -537,6 +619,14 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
         onReprint={handleReprintFromHistory}
         restaurantId={restaurantId}
       />
+
+      {/* Category Management Screen */}
+      <CategoryManagementScreen
+        visible={showCategoryManagement}
+        onClose={() => setShowCategoryManagement(false)}
+        restaurantId={restaurantId}
+        onSave={fetchGroupedMenu}
+      />
     </View>
   );
 }
@@ -574,6 +664,31 @@ const styles = StyleSheet.create({
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+  },
+  langToggle: {
+    backgroundColor: '#1a1a2e',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  langToggleText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  adminBtn: {
+    backgroundColor: '#0f3460',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e94560',
+  },
+  adminBtnText: {
+    color: '#e94560',
+    fontSize: 13,
+    fontWeight: '600',
   },
   logoutBtn: {
     backgroundColor: '#1a1a2e',
@@ -611,7 +726,8 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
-  categoryBar: {
+  // Subcategory bar (below primary pills)
+  subcategoryBar: {
     backgroundColor: '#16213e',
     paddingVertical: 8,
     borderBottomWidth: 1,
@@ -619,24 +735,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  categoryScroll: {
+  subcategoryScroll: {
     flex: 1,
   },
-  categoryTab: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+  subcategoryTab: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     marginHorizontal: 4,
-    borderRadius: 8,
+    borderRadius: 6,
+    backgroundColor: '#1a1a2e',
   },
-  categoryTabActive: {
-    backgroundColor: '#e94560',
+  subcategoryTabActive: {
+    backgroundColor: '#0f3460',
+    borderWidth: 1,
+    borderColor: '#e94560',
   },
-  categoryTabText: {
+  subcategoryTabText: {
     color: '#999',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '500',
   },
-  categoryTabTextActive: {
+  subcategoryTabTextActive: {
     color: '#fff',
   },
   historyButton: {
@@ -660,12 +779,18 @@ const styles = StyleSheet.create({
   menuGridContent: {
     padding: 12,
   },
+  subcategoryHeader: {
+    color: '#e94560',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    marginLeft: 6,
+  },
   itemsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
   menuItemCard: {
-    width: (width * 0.7 - 48) / 3,
     backgroundColor: '#16213e',
     borderRadius: 12,
     margin: 6,
@@ -674,9 +799,9 @@ const styles = StyleSheet.create({
   menuItemImage: {
     width: 64,
     height: 64,
-    marginLeft:'auto',
-    marginRight:'auto',
-    marginTop:12,
+    marginLeft: 'auto',
+    marginRight: 'auto',
+    marginTop: 12,
     backgroundColor: '#fff',
   },
   menuItemInfo: {
@@ -699,6 +824,16 @@ const styles = StyleSheet.create({
   popularBadgeText: {
     color: '#ffd700',
     fontSize: 12,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyStateText: {
+    color: '#666',
+    fontSize: 16,
   },
   cartSummary: {
     width: width * 0.3,

@@ -36,15 +36,17 @@ Get-Order-Stack-Restaurant-Mobile/
 │   ├── pos/                    # Point of Sale App
 │   │   └── src/
 │   │       ├── components/
-│   │       │   ├── CheckoutModal.tsx      # Checkout with table selection
-│   │       │   └── ReceiptPrinter.tsx     # Receipt preview & printing
+│   │       │   ├── CheckoutModal.tsx        # Checkout with table selection
+│   │       │   ├── ReceiptPrinter.tsx       # Receipt preview & printing
+│   │       │   └── PrimaryCategoryNav.tsx   # Primary category pills navigation
 │   │       ├── context/
-│   │       │   ├── CartContext.tsx        # Cart state management
-│   │       │   └── RestaurantContext.tsx  # Dynamic restaurant selection
+│   │       │   ├── CartContext.tsx          # Cart state management
+│   │       │   └── RestaurantContext.tsx    # Dynamic restaurant selection
 │   │       └── screens/
-│   │           ├── MenuScreen.tsx         # Main POS interface
-│   │           ├── OrderHistoryScreen.tsx # Past orders view
-│   │           └── RestaurantSetupScreen.tsx # Restaurant onboarding
+│   │           ├── MenuScreen.tsx           # Main POS interface
+│   │           ├── OrderHistoryScreen.tsx   # Past orders view
+│   │           ├── RestaurantSetupScreen.tsx # Restaurant onboarding
+│   │           └── CategoryManagementScreen.tsx # Admin: category management
 │   │
 │   └── kds/                    # Kitchen Display System
 │       └── src/
@@ -64,6 +66,11 @@ Get-Order-Stack-Restaurant-Mobile/
 |---------|--------|-------------|
 | Restaurant Setup | ✅ Complete | Connect to existing or create new restaurant |
 | Menu Display | ✅ Complete | Grid layout with categories, images, prices |
+| **Two-Tier Category Navigation** | ✅ Complete | Primary categories → Subcategories → Items |
+| **Primary Category Pills** | ✅ Complete | Top navigation with icons, bilingual support |
+| **Subcategory Tabs** | ✅ Complete | Filter items within primary category |
+| **Language Toggle** | ✅ Complete | 🇺🇸/🇪🇸 switch for bilingual menus |
+| **Category Management Admin** | ✅ Complete | Create/edit/delete categories, assign subcategories |
 | Cart Management | ✅ Complete | Add, remove, update quantity, clear cart |
 | Modifier Selection | ✅ Complete | Single/multi-select modifiers with prices |
 | Special Instructions | ✅ Complete | Per-item notes (e.g., "no onions") |
@@ -86,12 +93,71 @@ Get-Order-Stack-Restaurant-Mobile/
 
 ---
 
-## 🔴 PRIORITY: Action Items for Next Developer
+## 🆕 Recent Updates (January 21, 2026)
 
-### 1. **HIGH PRIORITY: Deploy KDS App**
+### Two-Tier Menu Hierarchy
+Implemented a hierarchical menu structure with primary categories and subcategories:
+
+**Database Changes:**
+- Added `primary_categories` table with bilingual support (name, nameEn)
+- Added `primaryCategoryId` foreign key to `menu_categories` table
+- Migration: `20260121150000_add_primary_categories`
+
+**New API Endpoints:**
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/primary-categories` | GET | List all primary categories |
+| `/primary-categories` | POST | Create primary category |
+| `/primary-categories/:id` | PATCH | Update primary category |
+| `/primary-categories/:id` | DELETE | Delete primary category |
+| `/menu/categories/:id/assign` | PATCH | Assign subcategory to primary |
+| `/menu/grouped` | GET | Hierarchical menu (primary → sub → items) |
+
+**New Components:**
+- `PrimaryCategoryNav.tsx` - Responsive pill navigation for primary categories
+- `CategoryManagementScreen.tsx` - Full admin UI for managing categories
+
+**UI Flow:**
+```
+┌──────────────────────────────────────────────────────┐
+│ 🍽️ Restaurant    [🇺🇸 EN] [⚙️ Categories] [Switch]    │
+├──────────────────────────────────────────────────────┤
+│ [🥗 Appetizers] [🍽️ Entrees] [🥤 Beverages] [🍰 Desserts] │ ← Primary Pills
+├──────────────────────────────────────────────────────┤
+│ [Ceviches] [Soups] [Salads]              [📋 History] │ ← Subcategory Tabs
+├────────────────────────────────────┬─────────────────┤
+│        Menu Items Grid             │    Cart Panel   │
+└────────────────────────────────────┴─────────────────┘
+```
+
+---
+
+## 🔴 PRIORITY: Next Items To Do
+
+### 1. **HIGH: Deploy Backend Changes**
+The primary categories migration and routes need to be deployed to production.
+
+```bash
+cd Get-Order-Stack-Restaurant-Backend
+npx prisma migrate deploy
+npx prisma generate
+npm run build
+git add . && git commit -m "Add primary categories feature"
+git push  # Triggers Render auto-deploy
+```
+
+### 2. **HIGH: Seed Primary Categories for Taipa**
+Run the seed script to create primary categories for the test restaurant:
+
+```bash
+cd Get-Order-Stack-Restaurant-Backend
+npx ts-node scripts/seed-primary-categories.ts
+```
+
+### 3. **HIGH: Deploy KDS App**
 KDS needs to be deployed to Vercel like the POS app.
 
-### 2. **HIGH PRIORITY: Update KDS for Dynamic Restaurant**
+### 4. **HIGH: Update KDS for Dynamic Restaurant**
 The KDS app still has a hardcoded restaurant ID. Need to:
 - Apply same pattern as POS (RestaurantSetupScreen, config.ts)
 - Update dependencies to match POS versions
@@ -99,22 +165,25 @@ The KDS app still has a hardcoded restaurant ID. Need to:
 **Files needing update (KDS):**
 - `/apps/kds/src/screens/KitchenDisplayScreen.tsx` - Still has hardcoded ID
 
-### 3. **LOW PRIORITY: Supabase RLS Warning (Known Issue)**
+### 5. **MEDIUM: Menu Item Management Screen**
+Create admin UI for managing menu items within categories:
+- Add/edit/delete menu items
+- Set prices, images, descriptions
+- Assign modifier groups
+- Toggle availability / 86 status
+
+### 6. **MEDIUM: Drag-and-Drop Reordering**
+Allow reordering of:
+- Primary categories (displayOrder)
+- Subcategories within a primary
+- Menu items within a subcategory
+
+### 7. **LOW: Supabase RLS Warning (Known Issue)**
 Supabase Security Advisor flags `public._prisma_migrations` table for RLS. 
 
-**Status:** RLS has been enabled and policy created, but Splinter (Supabase's linter) continues to flag it. This appears to be a false positive or cache issue.
+**Status:** RLS has been enabled and policy created, but Splinter continues to flag it. This appears to be a false positive.
 
-**What was done:**
-```sql
-ALTER TABLE public._prisma_migrations ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Service role only" ON public._prisma_migrations
-  FOR ALL
-  USING (auth.role() = 'service_role');
-```
-
-**Why we're moving on:** The `_prisma_migrations` table contains only migration metadata (names, timestamps, checksums) - no sensitive data. This is a low-risk item that can be revisited post-demo if needed.
-
-### 4. **WebSocket Integration (Future)**
+### 8. **LOW: WebSocket Integration**
 Replace polling with WebSocket for real-time updates:
 - Backend already has WebSocket capability
 - KDS currently polls every 5 seconds
@@ -158,12 +227,24 @@ Replace polling with WebSocket for real-time updates:
 
 **Production Base URL:** `https://get-order-stack-restaurant-backend.onrender.com/api/restaurant/{restaurantId}`
 
+### Menu & Categories
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/` | POST | Create new restaurant |
-| `/:restaurantId` | GET | Get restaurant details |
 | `/menu` | GET | Full menu with categories, items, modifiers |
-| `/tables` | GET | Available tables for dine-in |
+| `/menu/grouped` | GET | Hierarchical menu (primary → sub → items) |
+| `/menu/categories` | GET | List subcategories |
+| `/menu/categories` | POST | Create subcategory |
+| `/menu/categories/:id` | PATCH | Update subcategory |
+| `/menu/categories/:id` | DELETE | Delete subcategory |
+| `/menu/categories/:id/assign` | PATCH | Assign to primary category |
+| `/primary-categories` | GET | List primary categories |
+| `/primary-categories` | POST | Create primary category |
+| `/primary-categories/:id` | PATCH | Update primary category |
+| `/primary-categories/:id` | DELETE | Delete primary category |
+
+### Orders
+| Endpoint | Method | Description |
+|----------|--------|-------------|
 | `/orders` | GET | List orders (supports `?limit=50&status=pending`) |
 | `/orders` | POST | Create new order |
 | `/orders/:id/status` | PATCH | Update order status |
@@ -211,7 +292,6 @@ pending → confirmed → preparing → ready → completed
 ```bash
 cd apps/pos
 npm install
-npm install @react-native-async-storage/async-storage  # Required for restaurant persistence
 npm run web    # Browser (recommended for tablet testing)
 npm run ios    # iOS Simulator
 npm run android
@@ -252,6 +332,13 @@ Uses React Context with useReducer pattern. Supports:
 ### Tax Calculation
 Currently hardcoded at 6.5% (Florida). Backend supports per-restaurant tax rates with auto-lookup by ZIP code.
 
+### Bilingual Support
+- Primary categories: `name` (Spanish), `nameEn` (English)
+- Subcategories: `name` (Spanish), `nameEn` (English)
+- Menu items: `name`/`nameEn`, `description`/`descriptionEn`
+- Language toggle in header switches display language
+- `/menu/grouped?lang=en` returns English names when available
+
 ---
 
 ## Database Notes
@@ -262,15 +349,12 @@ Currently hardcoded at 6.5% (Florida). Backend supports per-restaurant tax rates
 - `DATABASE_URL` uses pooler connection (port 6543)
 - `DIRECT_URL` uses direct connection (port 5432) for migrations
 
-### Key Tables (use lowercase in SQL queries)
-```sql
-SELECT id, name, slug FROM restaurants;  -- List all restaurants
-```
-
+### Key Tables
 | Table | Description |
 |-------|-------------|
 | `restaurants` | Multi-tenant root |
-| `menu_categories` | Menu sections |
+| `primary_categories` | Top-level menu navigation (NEW) |
+| `menu_categories` | Subcategories within primary categories |
 | `menu_items` | Food/drink items |
 | `modifier_groups` | Groups of modifiers |
 | `modifiers` | Individual modifier options |
@@ -314,4 +398,4 @@ SELECT id, name, slug FROM restaurants;  -- List all restaurants
 
 ---
 
-*Last Updated: January 21, 2025*
+*Last Updated: January 21, 2026*
