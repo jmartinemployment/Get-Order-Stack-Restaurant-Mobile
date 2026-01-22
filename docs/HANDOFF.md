@@ -18,7 +18,7 @@ React Native monorepo containing two tablet applications for restaurant operatio
 |---------|-----|--------|
 | **POS App** | https://get-order-stack-restaurant-mobile.vercel.app | ✅ Live |
 | **Backend API** | https://get-order-stack-restaurant-backend.onrender.com | ✅ Live |
-| **KDS App** | Not yet deployed | 🔴 Pending |
+| **KDS App** | https://get-order-stack-restaurant-mobile-j.vercel.app | ✅ Live |
 
 ### Test Restaurant IDs
 | Restaurant | ID |
@@ -154,16 +154,11 @@ cd Get-Order-Stack-Restaurant-Backend
 npx ts-node scripts/seed-primary-categories.ts
 ```
 
-### 3. **HIGH: Deploy KDS App**
-KDS needs to be deployed to Vercel like the POS app.
+### 3. ~~**HIGH: Deploy KDS App**~~ ✅ COMPLETE
+KDS deployed to: https://get-order-stack-restaurant-mobile-j.vercel.app
 
-### 4. **HIGH: Update KDS for Dynamic Restaurant**
-The KDS app still has a hardcoded restaurant ID. Need to:
-- Apply same pattern as POS (RestaurantSetupScreen, config.ts)
-- Update dependencies to match POS versions
-
-**Files needing update (KDS):**
-- `/apps/kds/src/screens/KitchenDisplayScreen.tsx` - Still has hardcoded ID
+### 4. ~~**HIGH: Update KDS for Dynamic Restaurant**~~ ✅ COMPLETE
+KDS now has RestaurantSetupScreen and dynamic restaurant selection.
 
 ### 5. **MEDIUM: Menu Item Management Screen**
 Create admin UI for managing menu items within categories:
@@ -336,8 +331,18 @@ Currently hardcoded at 6.5% (Florida). Backend supports per-restaurant tax rates
 - Primary categories: `name` (Spanish), `nameEn` (English)
 - Subcategories: `name` (Spanish), `nameEn` (English)
 - Menu items: `name`/`nameEn`, `description`/`descriptionEn`
+- **Browser Language Detection:** Auto-detects browser language on load
+  - If browser language starts with 'en' → English
+  - Otherwise → Spanish (default for POS systems)
 - Language toggle in header switches display language
 - `/menu/grouped?lang=en` returns English names when available
+
+### Language Toggle Implementation
+The language toggle had a React state closure bug that was fixed. Key points:
+- Uses lazy initialization: `useState(() => detectBrowserLanguage())`
+- Uses `React.useRef` to capture initial language for first fetch
+- `toggleLanguage()` directly fetches with new language (avoids async state issues)
+- Default fallback is Spanish for restaurant POS use case
 
 ---
 
@@ -369,8 +374,8 @@ Currently hardcoded at 6.5% (Florida). Backend supports per-restaurant tax rates
 ## Known Issues / Tech Debt
 
 1. **Supabase RLS warning** - Linter false positive on _prisma_migrations (RLS enabled, documented)
-2. **KDS not deployed** - Needs Vercel deployment
-3. **KDS hardcoded restaurant ID** - Needs same setup flow as POS
+2. ~~**KDS not deployed**~~ ✅ Deployed to https://get-order-stack-restaurant-mobile-j.vercel.app
+3. ~~**KDS hardcoded restaurant ID**~~ ✅ Now uses dynamic restaurant selection
 4. **No offline support** - Orders fail if network unavailable
 5. **No sound notifications** - KDS should beep for new orders
 6. **Receipt printing mobile** - Needs actual printer SDK (Star Micronics, Epson, etc.)
@@ -398,4 +403,70 @@ Currently hardcoded at 6.5% (Florida). Backend supports per-restaurant tax rates
 
 ---
 
-*Last Updated: January 21, 2026*
+## 🆕 Latest Session Updates (January 22, 2026)
+
+### Session Summary
+This session focused on fixing the language toggle feature in the POS MenuScreen. The conversation was compacted mid-session due to context length.
+
+### Language Toggle Bug Fix ✅ COMPLETE
+**Issue:** Language toggle button (EN/ES) wasn't working - clicking it didn't change the displayed menu language.
+
+**Root Cause:** React async state race condition. When `toggleLanguage()` called `setLanguage(newLang)` followed by `fetchGroupedMenu()`, the fetch function read the OLD language value from the closure because React state updates are asynchronous.
+
+**Original Broken Code:**
+```typescript
+const [language, setLanguage] = useState<'es' | 'en'>('en'); // Hardcoded English
+
+useEffect(() => {
+  fetchGroupedMenu(); // Uses 'en' from initial state
+}, []);
+
+function toggleLanguage() {
+  const newLang = language === 'en' ? 'es' : 'en';
+  setLanguage(newLang);
+  fetchGroupedMenu(); // ❌ Still uses OLD language due to closure
+}
+```
+
+**Fix Applied:**
+1. **Changed default language** from `'en'` to `'es'` (Spanish - appropriate for restaurant POS)
+2. **Added browser language detection** using lazy initialization:
+   ```typescript
+   const [language, setLanguage] = useState<'es' | 'en'>(() => {
+     if (typeof navigator !== 'undefined' && navigator.language) {
+       const browserLang = navigator.language.toLowerCase();
+       return browserLang.startsWith('en') ? 'en' : 'es';
+     }
+     return 'es'; // Default to Spanish for POS systems
+   });
+   ```
+3. **Used React.useRef** to capture initial language for first fetch:
+   ```typescript
+   const initialLangRef = React.useRef(language);
+   
+   useEffect(() => {
+     fetchRestaurant();
+     fetchGroupedMenu(initialLangRef.current); // ✅ Uses captured initial value
+   }, []);
+   ```
+4. **toggleLanguage() already had the fix** - it fetches directly with `newLang` parameter
+
+**Files Changed:**
+- `/apps/pos/src/screens/MenuScreen.tsx` - Lines ~107-120
+
+### Testing Instructions
+1. Run `npm run web` in `/apps/pos`
+2. Open browser dev tools console
+3. On load, should see language detection based on browser settings
+4. Click language toggle button - should immediately switch and refetch menu
+5. Menu items should display in the selected language
+
+### Previous Session Context (from transcript)
+The earlier part of this conversation (before compaction) also discussed:
+- Logo display issues (aspect ratios)
+- General UI styling improvements
+- The transcript is available at: `/mnt/transcripts/2026-01-22-13-28-57-logo-display-language-toggle-fix.txt`
+
+---
+
+*Last Updated: January 22, 2026*

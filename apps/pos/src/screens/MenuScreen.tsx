@@ -17,12 +17,21 @@ import { ReceiptModal } from '../components/ReceiptPrinter';
 import { OrderHistoryScreen } from './OrderHistoryScreen';
 import { PrimaryCategoryNav, PrimaryCategory } from '../components/PrimaryCategoryNav';
 import { CategoryManagementScreen } from './CategoryManagementScreen';
+import { MenuItemManagementScreen } from './MenuItemManagementScreen';
 import { config } from '../config';
 
 interface MenuScreenProps {
   restaurantId: string;
   restaurantName: string;
+  restaurantLogo?: string;
   onLogout: () => void;
+}
+
+interface Restaurant {
+  id: string;
+  name: string;
+  logo?: string;
+  location?: string;
 }
 
 interface Modifier {
@@ -45,7 +54,9 @@ interface ModifierGroup {
 interface MenuItem {
   id: string;
   name: string;
+  nameEn?: string;
   description: string;
+  descriptionEn?: string;
   price: number;
   image?: string;
   popular?: boolean;
@@ -67,9 +78,12 @@ interface GroupedPrimaryCategory extends PrimaryCategory {
   subcategories: Subcategory[];
 }
 
-export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScreenProps) {
+export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLogout }: MenuScreenProps) {
   const API_URL = `${config.apiUrl}/api/restaurant/${restaurantId}`;
   const { width: screenWidth } = useWindowDimensions();
+  
+  // Restaurant data (for logo, etc.)
+  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   
   // Menu data - now hierarchical
   const [groupedMenu, setGroupedMenu] = useState<GroupedPrimaryCategory[]>([]);
@@ -93,26 +107,52 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
   const [showReceipt, setShowReceipt] = useState(false);
   const [showOrderHistory, setShowOrderHistory] = useState(false);
   const [showCategoryManagement, setShowCategoryManagement] = useState(false);
+  const [showMenuItemManagement, setShowMenuItemManagement] = useState(false);
+  
+  // Profit insight for checkout success
+  const [profitInsight, setProfitInsight] = useState<{
+    profitMargin: number;
+    estimatedProfit: number;
+    starItem?: { name: string; margin: number };
+    insightText: string;
+    quickTip: string;
+  } | null>(null);
 
-  // Language setting (could be from context/settings in the future)
-  const [language, setLanguage] = useState<'es' | 'en'>('en');
+  // Language setting - always default to Spanish for POS systems
+  // Restaurant staff typically prefer Spanish; toggle available for English
+  const [language, setLanguage] = useState<'es' | 'en'>('es');
 
   const { addItem, removeItem, updateQuantity, clearCart, state, subtotal, itemCount } = useCart();
 
   useEffect(() => {
-    fetchGroupedMenu();
+    fetchRestaurant();
+    // Default to Spanish on initial load
+    fetchGroupedMenu('es');
   }, []);
 
-  async function fetchGroupedMenu() {
+  async function fetchRestaurant() {
     try {
-      setLoading(true);
-      const response = await fetch(`${API_URL}/menu/grouped?lang=${language}`);
+      const response = await fetch(API_URL);
+      if (response.ok) {
+        const data = await response.json();
+        setRestaurant(data);
+      }
+    } catch (err) {
+      console.error('Error fetching restaurant:', err);
+    }
+  }
+
+  async function fetchGroupedMenu(lang?: 'es' | 'en', showLoading = true) {
+    const fetchLang = lang ?? language;
+    try {
+      if (showLoading) setLoading(true);
+      const response = await fetch(`${API_URL}/menu/grouped?lang=${fetchLang}`);
       if (!response.ok) throw new Error('Failed to fetch menu');
       const data: GroupedPrimaryCategory[] = await response.json();
       setGroupedMenu(data);
       
-      // Set initial selections
-      if (data.length > 0) {
+      // Set initial selections only if not already set
+      if (!selectedPrimaryId && data.length > 0) {
         setSelectedPrimaryId(data[0].id);
         if (data[0].subcategories.length > 0) {
           setSelectedSubcategoryId(data[0].subcategories[0].id);
@@ -121,7 +161,7 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load menu');
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }
 
@@ -230,10 +270,26 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
     }
   }
 
-  function handleCheckoutSuccess(orderNumber: string, data: any) {
+  async function handleCheckoutSuccess(orderNumber: string, data: any) {
     setShowCheckout(false);
     setOrderSuccess(orderNumber);
     setReceiptData(data);
+    setProfitInsight(null); // Reset while loading
+    
+    // Fetch profit insight for this order
+    try {
+      const orderId = data.orderId; // Need to pass orderId from CheckoutModal
+      if (orderId) {
+        const response = await fetch(`${API_URL}/orders/${orderId}/profit-insight`);
+        if (response.ok) {
+          const insight = await response.json();
+          setProfitInsight(insight);
+        }
+      }
+    } catch (err) {
+      console.log('Could not fetch profit insight:', err);
+      // Non-critical - don't show error to user
+    }
   }
 
   function handlePrintReceipt() {
@@ -266,11 +322,21 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
     setShowReceipt(true);
   }
 
-  function toggleLanguage() {
+  async function toggleLanguage() {
     const newLang = language === 'en' ? 'es' : 'en';
+    console.log('Toggling language to:', newLang);
     setLanguage(newLang);
-    // Refetch menu with new language
-    fetchGroupedMenu();
+    
+    // Fetch menu with new language directly (avoid closure issues)
+    try {
+      const response = await fetch(`${API_URL}/menu/grouped?lang=${newLang}`);
+      if (!response.ok) throw new Error('Failed to fetch menu');
+      const data: GroupedPrimaryCategory[] = await response.json();
+      console.log('Fetched menu data:', data.length, 'categories');
+      setGroupedMenu(data);
+    } catch (err) {
+      console.error('Error fetching menu:', err);
+    }
   }
 
   if (loading) {
@@ -298,12 +364,30 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.headerLogo}>🍽️</Text>
-          <Text style={styles.headerTitle}>{restaurantName}</Text>
+          {(restaurant?.logo || restaurantLogo) ? (
+            <View style={styles.logoContainer}>
+              <Image 
+                source={{ uri: restaurant?.logo || restaurantLogo }} 
+                style={styles.headerLogoImage}
+                resizeMode="contain"
+              />
+            </View>
+          ) : (
+            <Text style={styles.headerLogo}>🍽️</Text>
+          )}
+          <Text style={styles.headerTitle}>{restaurant?.name || restaurantName}</Text>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity style={styles.langToggle} onPress={toggleLanguage}>
-            <Text style={styles.langToggleText}>{language === 'en' ? '🇺🇸 EN' : '🇪🇸 ES'}</Text>
+            <Text style={styles.langToggleText}>
+              {language === 'es' ? '🇪🇸 ES' : '🇺🇸 EN'} → {language === 'es' ? '🇺🇸' : '🇪🇸'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.adminBtn}
+            onPress={() => setShowMenuItemManagement(true)}
+          >
+            <Text style={styles.adminBtnText}>🍽️ Items</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.adminBtn}
@@ -343,7 +427,7 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
                   selectedSubcategoryId === subcategory.id && styles.subcategoryTabTextActive,
                 ]}
               >
-                {subcategory.name}
+                {language === 'en' && subcategory.nameEn ? subcategory.nameEn : subcategory.name}
               </Text>
             </TouchableOpacity>
           ))}
@@ -361,7 +445,9 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
         <ScrollView style={styles.menuGrid} contentContainerStyle={styles.menuGridContent}>
           {/* Show subcategory name as header */}
           {currentSubcategory && (
-            <Text style={styles.subcategoryHeader}>{currentSubcategory.name}</Text>
+            <Text style={styles.subcategoryHeader}>
+              {language === 'en' && currentSubcategory.nameEn ? currentSubcategory.nameEn : currentSubcategory.name}
+            </Text>
           )}
           
           <View style={styles.itemsRow}>
@@ -380,7 +466,7 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
                 )}
                 <View style={styles.menuItemInfo}>
                   <Text style={styles.menuItemName} numberOfLines={2}>
-                    {item.name}
+                    {language === 'en' && item.nameEn ? item.nameEn : item.name}
                   </Text>
                   <Text style={styles.menuItemPrice}>${Number(item.price).toFixed(2)}</Text>
                   {item.popular && (
@@ -485,7 +571,9 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{selectedItem.name}</Text>
+              <Text style={styles.modalTitle}>
+                {language === 'en' && selectedItem.nameEn ? selectedItem.nameEn : selectedItem.name}
+              </Text>
               <TouchableOpacity
                 style={styles.modalClose}
                 onPress={() => setSelectedItem(null)}
@@ -495,7 +583,9 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
             </View>
 
             <ScrollView style={styles.modalBody}>
-              <Text style={styles.modalDescription}>{selectedItem.description}</Text>
+              <Text style={styles.modalDescription}>
+                {language === 'en' && selectedItem.descriptionEn ? selectedItem.descriptionEn : selectedItem.description}
+              </Text>
               <Text style={styles.modalBasePrice}>
                 Base price: ${Number(selectedItem.price).toFixed(2)}
               </Text>
@@ -584,6 +674,24 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
             <Text style={styles.successTitle}>Order Placed!</Text>
             <Text style={styles.successOrderNumber}>Order #{orderSuccess}</Text>
             <Text style={styles.successMessage}>The order has been sent to the kitchen.</Text>
+            
+            {/* Profit Insight Section */}
+            {profitInsight && (
+              <View style={styles.profitInsightBox}>
+                <View style={styles.profitInsightHeader}>
+                  <Text style={styles.profitInsightEmoji}>💰</Text>
+                  <Text style={styles.profitInsightMargin}>{profitInsight.profitMargin}% margin</Text>
+                  <Text style={styles.profitInsightProfit}>${profitInsight.estimatedProfit.toFixed(2)} profit</Text>
+                </View>
+                {profitInsight.starItem && (
+                  <Text style={styles.profitInsightStar}>
+                    ⭐ Star item: {profitInsight.starItem.name}
+                  </Text>
+                )}
+                <Text style={styles.profitInsightTip}>{profitInsight.quickTip}</Text>
+              </View>
+            )}
+            
             <View style={styles.successActions}>
               <TouchableOpacity
                 style={styles.printReceiptBtn}
@@ -596,6 +704,7 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
                 onPress={() => {
                   setOrderSuccess(null);
                   setReceiptData(null);
+                  setProfitInsight(null);
                 }}
               >
                 <Text style={styles.newOrderBtnText}>New Order</Text>
@@ -625,7 +734,15 @@ export function MenuScreen({ restaurantId, restaurantName, onLogout }: MenuScree
         visible={showCategoryManagement}
         onClose={() => setShowCategoryManagement(false)}
         restaurantId={restaurantId}
-        onSave={fetchGroupedMenu}
+        onCategoriesUpdated={() => fetchGroupedMenu(language)}
+      />
+
+      {/* Menu Item Management Screen */}
+      <MenuItemManagementScreen
+        visible={showMenuItemManagement}
+        onClose={() => setShowMenuItemManagement(false)}
+        restaurantId={restaurantId}
+        onItemsUpdated={() => fetchGroupedMenu(language)}
       />
     </View>
   );
@@ -652,6 +769,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  logoContainer: {
+    backgroundColor: '#1a1a2e',
+    borderRadius: 6,
+    padding: 4,
+  },
+  headerLogoImage: {
+    width: 100,
+    height: 36,
   },
   headerLogo: {
     fontSize: 24,
@@ -1170,5 +1296,47 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  // Profit Insight Styles
+  profitInsightBox: {
+    backgroundColor: '#1a3a2e',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    width: '100%',
+  },
+  profitInsightHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginBottom: 8,
+  },
+  profitInsightEmoji: {
+    fontSize: 24,
+  },
+  profitInsightMargin: {
+    color: '#4CAF50',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  profitInsightProfit: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  profitInsightStar: {
+    color: '#ffd700',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  profitInsightTip: {
+    color: '#aaa',
+    fontSize: 13,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });

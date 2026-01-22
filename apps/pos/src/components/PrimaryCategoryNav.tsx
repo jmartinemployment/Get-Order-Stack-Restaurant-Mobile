@@ -51,9 +51,8 @@ export function PrimaryCategoryNav({
   const shouldWrap = width < 600;
 
   const getDisplayName = (cat: PrimaryCategory) => {
-    if (language === 'en' && cat.nameEn) {
-      return cat.nameEn;
-    }
+    // The API already returns the correct name based on lang query param
+    // nameEs/nameEn are only for reference, use 'name' which is already translated
     return cat.name;
   };
 

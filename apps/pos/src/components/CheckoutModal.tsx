@@ -71,9 +71,13 @@ export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: Che
       return;
     }
 
-    if (orderType === 'dine-in' && !selectedTableId && tables.length > 0) {
-      setError('Please select a table for dine-in orders');
-      return;
+    if (orderType === 'dine-in' && !selectedTableId) {
+      // Only require table selection if tables are configured
+      if (tables.length > 0) {
+        setError('Please select a table for dine-in orders');
+        return;
+      }
+      // If no tables configured and no manual entry, that's okay - optional
     }
 
     setSubmitting(true);
@@ -88,7 +92,13 @@ export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: Che
         },
         orderType,
         orderSource: 'pos',
-        tableId: orderType === 'dine-in' ? selectedTableId : undefined,
+        // Handle table: if it's a real ID use tableId, if manual use tableNumber
+        tableId: orderType === 'dine-in' && selectedTableId && !selectedTableId.startsWith('manual:') 
+          ? selectedTableId 
+          : undefined,
+        tableNumber: orderType === 'dine-in' && selectedTableId?.startsWith('manual:') 
+          ? selectedTableId.replace('manual:', '') 
+          : undefined,
         items: state.items.map(item => ({
           menuItemId: item.menuItemId,
           quantity: item.quantity,
@@ -110,8 +120,9 @@ export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: Che
 
       const order = await response.json();
       
-      // Build receipt data
+      // Build receipt data (include orderId for profit insight)
       const receiptData = {
+        orderId: order.id,
         orderNumber: order.orderNumber,
         orderType,
         customerName: customerName.trim(),
@@ -185,10 +196,13 @@ export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: Che
               ) : tables.length === 0 ? (
                 <TextInput
                   style={styles.input}
-                  placeholder="Table Number"
+                  placeholder="Table Number (e.g., 1, 2, 3)"
                   placeholderTextColor="#666"
                   keyboardType="number-pad"
-                  onChangeText={(text) => setSelectedTableId(text)}
+                  onChangeText={(text) => {
+                    // Store as 'manual:NUMBER' to indicate it's not a table ID
+                    setSelectedTableId(text ? `manual:${text}` : null);
+                  }}
                 />
               ) : (
                 <View style={styles.tableGrid}>

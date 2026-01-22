@@ -11,6 +11,7 @@ interface Restaurant {
   id: string;
   name: string;
   slug: string;
+  logo?: string;
   address?: string;
   city?: string;
   state?: string;
@@ -87,6 +88,7 @@ export default function App() {
         <MenuScreen 
           restaurantId={restaurant.id} 
           restaurantName={restaurant.name}
+          restaurantLogo={restaurant.logo}
           onLogout={handleLogout}
         />
       </SafeAreaView>
