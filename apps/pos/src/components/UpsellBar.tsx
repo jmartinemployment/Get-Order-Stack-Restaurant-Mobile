@@ -162,12 +162,10 @@ export function UpsellBar({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#1a2a3e',
+    backgroundColor: 'rgb(26, 26, 46)',
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#2a3a4e',
     marginRight: 12,
     flex: 1,
   },

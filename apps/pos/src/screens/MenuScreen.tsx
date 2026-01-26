@@ -478,7 +478,7 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={styles.header} nativeID="navBar">
         <View style={styles.headerLeft}>
           <TouchableOpacity
             style={styles.menuButton}
@@ -492,7 +492,7 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
             <View style={styles.logoContainer}>
               <Image
                 source={{ uri: restaurant?.logo || restaurantLogo }}
-                style={styles.headerLogoImage}
+                style={screenWidth >= 992 ? styles.headerLogoImageLarge : styles.headerLogoImage}
                 resizeMode="contain"
               />
             </View>
@@ -506,31 +506,6 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
               {language === 'es' ? '🇪🇸 ES' : '🇺🇸 EN'} → {language === 'es' ? '🇺🇸' : '🇪🇸'}
             </Text>
           </TouchableOpacity>
-{screenWidth >= 992 && (
-            <>
-              <TouchableOpacity
-                style={styles.adminBtn}
-                onPress={() => setShowMenuItemManagement(true)}
-              >
-                <Text style={styles.adminBtnText}>🍽️ Items</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.adminBtn}
-                onPress={() => setShowCategoryManagement(true)}
-              >
-                <Text style={styles.adminBtnText}>⚙️ Categories</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.adminBtn, styles.chefBtn]}
-                onPress={() => setShowChefPanel(true)}
-              >
-                <Text style={styles.chefBtnText}>👨‍🍳 Chef</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
-                <Text style={styles.logoutBtnText}>Switch Restaurant</Text>
-              </TouchableOpacity>
-            </>
-          )}
         </View>
       </View>
 
@@ -545,18 +520,16 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
       )}
 
       {/* Toolbar with Upsell Bar and History button */}
-      <View style={styles.toolBar}>
-        <View style={styles.toolBarLeft}>
-          <UpsellBar
-            suggestions={upsellSuggestions}
-            onSuggestionPress={handleUpsellPress}
-            mode={itemCount === 0 ? 'empty-cart' : 'has-items'}
-            language={language}
-          />
-        </View>
-              </View>
+      <View style={styles.toolBar} nativeID="recommendations">
+        <UpsellBar
+          suggestions={upsellSuggestions}
+          onSuggestionPress={handleUpsellPress}
+          mode={itemCount === 0 ? 'empty-cart' : 'has-items'}
+          language={language}
+        />
+      </View>
 
-      <View style={styles.mainContent}>
+      <View style={styles.mainContent} nativeID="main-content">
         {/* Menu Items Grid - Full width now */}
         <ScrollView style={styles.menuGrid} contentContainerStyle={styles.menuGridContent}>
           {currentSubcategories.length > 0 ? (
@@ -576,7 +549,7 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
                   {subcategory.items.map((item) => (
                     <TouchableOpacity
                       key={item.id}
-                      style={[styles.menuItemCard, { width: '31%' }]}
+                      style={[styles.menuItemCard, { width: screenWidth <= 767 ? '48%' : '31%' }]}
                       onPress={() => handleItemPress(item)}
                     >
                       {item.image && (
@@ -1045,6 +1018,10 @@ const styles = StyleSheet.create({
     width: 100,
     height: 36,
   },
+  headerLogoImageLarge: {
+    width: 160,
+    height: 58,
+  },
   headerLogo: {
     fontSize: 24,
   },
@@ -1128,20 +1105,9 @@ const styles = StyleSheet.create({
   },
   // Toolbar (below primary pills)
   toolBar: {
-    backgroundColor: '#16213e',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#0f3460',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 50,
-  },
-  toolBarLeft: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    justifyContent: 'center',
   },
   historyButton: {
     backgroundColor: '#0f3460',
