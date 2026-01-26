@@ -18,6 +18,8 @@ import { OrderHistoryScreen } from './OrderHistoryScreen';
 import { PrimaryCategoryNav, PrimaryCategory } from '../components/PrimaryCategoryNav';
 import { CategoryManagementScreen } from './CategoryManagementScreen';
 import { MenuItemManagementScreen } from './MenuItemManagementScreen';
+import { UpsellBar, UpsellSuggestion } from '../components/UpsellBar';
+import { ChefInputPanel, ChefPick } from '../components/ChefInputPanel';
 import { config } from '../config';
 
 interface MenuScreenProps {
@@ -90,9 +92,8 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Selection state
+  // Selection state - only need primary category now (subcategories shown inline with ribbons)
   const [selectedPrimaryId, setSelectedPrimaryId] = useState<string | null>(null);
-  const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<string | null>(null);
   
   // Item detail modal
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
@@ -101,6 +102,8 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
   const [quantity, setQuantity] = useState(1);
   
   // Other modals
+  const [showMenu, setShowMenu] = useState(false);
+  const [showCart, setShowCart] = useState(false);
   const [showCheckout, setShowCheckout] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   const [receiptData, setReceiptData] = useState<any>(null);
@@ -122,6 +125,13 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
   // Restaurant staff typically prefer Spanish; toggle available for English
   const [language, setLanguage] = useState<'es' | 'en'>('es');
 
+  // Upsell suggestions state (will be powered by AI in future)
+  const [upsellSuggestions, setUpsellSuggestions] = useState<UpsellSuggestion[]>([]);
+
+  // Chef's Picks state
+  const [chefPicks, setChefPicks] = useState<ChefPick[]>([]);
+  const [showChefPanel, setShowChefPanel] = useState(false);
+
   const { addItem, removeItem, updateQuantity, clearCart, state, subtotal, itemCount } = useCart();
 
   useEffect(() => {
@@ -129,6 +139,103 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
     // Default to Spanish on initial load
     fetchGroupedMenu('es');
   }, []);
+
+  // Generate upsell suggestions based on cart state and chef picks
+  // In future, this will call an AI endpoint for real recommendations
+  useEffect(() => {
+    const generateSuggestions = (): UpsellSuggestion[] => {
+      // Get active chef picks
+      const activeChefPicks = chefPicks.filter(p => p.active);
+      
+      if (itemCount === 0) {
+        // Empty cart: Show chef picks, popular items, high-margin starters
+        const suggestions: UpsellSuggestion[] = [];
+        
+        // Add chef picks first
+        activeChefPicks.forEach(pick => {
+          suggestions.push({
+            id: `chef-${pick.menuItemId}`,
+            menuItemId: pick.menuItemId,
+            name: pick.menuItemName,
+            reason: pick.note || (language === 'es' ? 'Recomendado por el chef' : 'Chef recommended'),
+            price: 0, // Would come from menu item lookup
+            type: 'chef-pick',
+          });
+        });
+        
+        // Add demo popular/high-margin items
+        suggestions.push(
+          {
+            id: 'popular-1',
+            name: language === 'es' ? 'Ceviche Clásico' : 'Classic Ceviche',
+            reason: language === 'es' ? '🔥 Más vendido' : '🔥 Best seller',
+            price: 18.00,
+            type: 'popular',
+          },
+          {
+            id: 'margin-1',
+            name: language === 'es' ? 'Pisco Sour' : 'Pisco Sour',
+            reason: language === 'es' ? 'Coctel signature' : 'Signature cocktail',
+            price: 12.00,
+            type: 'high-margin',
+          },
+          {
+            id: 'popular-2',
+            name: language === 'es' ? 'Lomo Saltado' : 'Lomo Saltado',
+            reason: language === 'es' ? 'Favorito de clientes' : 'Customer favorite',
+            price: 24.00,
+            type: 'popular',
+          }
+        );
+        
+        return suggestions;
+      } else {
+        // Has items: Suggest complementary add-ons
+        const suggestions: UpsellSuggestion[] = [];
+        
+        // Still show relevant chef picks
+        activeChefPicks.slice(0, 1).forEach(pick => {
+          suggestions.push({
+            id: `chef-${pick.menuItemId}`,
+            menuItemId: pick.menuItemId,
+            name: pick.menuItemName,
+            reason: pick.note || (language === 'es' ? 'Recomendado hoy' : 'Recommended today'),
+            price: 0,
+            type: 'chef-pick',
+          });
+        });
+        
+        // Add complementary items based on cart
+        suggestions.push(
+          {
+            id: 'upsell-1',
+            name: language === 'es' ? 'Chicha Morada' : 'Purple Corn Drink',
+            reason: language === 'es' ? 'Popular con tu pedido' : 'Popular with your order',
+            price: 4.50,
+            type: 'upsell',
+          },
+          {
+            id: 'upsell-2',
+            name: language === 'es' ? 'Choclo con Queso' : 'Corn with Cheese',
+            reason: language === 'es' ? 'Complemento perfecto' : 'Perfect complement',
+            price: 6.00,
+            type: 'upsell',
+          },
+          {
+            id: 'upsell-3',
+            name: language === 'es' ? 'Suspiro Limeño' : 'Peruvian Meringue',
+            reason: language === 'es' ? '🍰 Para terminar' : '🍰 To finish',
+            price: 7.50,
+            type: 'upsell',
+          }
+        );
+        
+        return suggestions;
+      }
+    };
+    
+    setUpsellSuggestions(generateSuggestions());
+  }, [itemCount, language, chefPicks]);
 
   async function fetchRestaurant() {
     try {
@@ -151,12 +258,9 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
       const data: GroupedPrimaryCategory[] = await response.json();
       setGroupedMenu(data);
       
-      // Set initial selections only if not already set
+      // Set initial selection only if not already set
       if (!selectedPrimaryId && data.length > 0) {
         setSelectedPrimaryId(data[0].id);
-        if (data[0].subcategories.length > 0) {
-          setSelectedSubcategoryId(data[0].subcategories[0].id);
-        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load menu');
@@ -168,17 +272,9 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
   // Get current primary category and its subcategories
   const currentPrimary = groupedMenu.find((p) => p.id === selectedPrimaryId);
   const currentSubcategories = currentPrimary?.subcategories || [];
-  const currentSubcategory = currentSubcategories.find((s) => s.id === selectedSubcategoryId);
 
   function handlePrimarySelect(category: PrimaryCategory) {
     setSelectedPrimaryId(category.id);
-    // Auto-select first subcategory of the new primary
-    const primary = groupedMenu.find((p) => p.id === category.id);
-    if (primary && primary.subcategories.length > 0) {
-      setSelectedSubcategoryId(primary.subcategories[0].id);
-    } else {
-      setSelectedSubcategoryId(null);
-    }
   }
 
   function handleItemPress(item: MenuItem) {
@@ -260,6 +356,26 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
 
   function handleRemoveFromCart(itemId: string) {
     removeItem(itemId);
+  }
+
+  function handleUpsellPress(suggestion: UpsellSuggestion) {
+    // For demo, add as a simple cart item
+    // In production, this would look up the actual menu item by menuItemId
+    const cartItem: CartItem = {
+      id: `${suggestion.id}-${Date.now()}`,
+      menuItemId: suggestion.menuItemId || suggestion.id,
+      name: suggestion.name,
+      price: suggestion.price,
+      quantity: 1,
+      modifiers: [],
+    };
+    addItem(cartItem);
+  }
+
+  function handleSaveChefPicks(picks: ChefPick[]) {
+    setChefPicks(picks);
+    // In production, this would persist to backend
+    console.log('Saved chef picks:', picks);
   }
 
   function handleUpdateCartQuantity(itemId: string, newQuantity: number) {
@@ -364,10 +480,18 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
+          <TouchableOpacity
+            style={styles.menuButton}
+            onPress={() => setShowMenu(true)}
+          >
+            <Text style={styles.menuButtonText}>☰</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={styles.headerCenter}>
           {(restaurant?.logo || restaurantLogo) ? (
             <View style={styles.logoContainer}>
-              <Image 
-                source={{ uri: restaurant?.logo || restaurantLogo }} 
+              <Image
+                source={{ uri: restaurant?.logo || restaurantLogo }}
                 style={styles.headerLogoImage}
                 resizeMode="contain"
               />
@@ -375,7 +499,6 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
           ) : (
             <Text style={styles.headerLogo}>🍽️</Text>
           )}
-          <Text style={styles.headerTitle}>{restaurant?.name || restaurantName}</Text>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity style={styles.langToggle} onPress={toggleLanguage}>
@@ -383,188 +506,305 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
               {language === 'es' ? '🇪🇸 ES' : '🇺🇸 EN'} → {language === 'es' ? '🇺🇸' : '🇪🇸'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.adminBtn}
-            onPress={() => setShowMenuItemManagement(true)}
-          >
-            <Text style={styles.adminBtnText}>🍽️ Items</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.adminBtn}
-            onPress={() => setShowCategoryManagement(true)}
-          >
-            <Text style={styles.adminBtnText}>⚙️ Categories</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
-            <Text style={styles.logoutBtnText}>Switch Restaurant</Text>
-          </TouchableOpacity>
+{screenWidth >= 992 && (
+            <>
+              <TouchableOpacity
+                style={styles.adminBtn}
+                onPress={() => setShowMenuItemManagement(true)}
+              >
+                <Text style={styles.adminBtnText}>🍽️ Items</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.adminBtn}
+                onPress={() => setShowCategoryManagement(true)}
+              >
+                <Text style={styles.adminBtnText}>⚙️ Categories</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.adminBtn, styles.chefBtn]}
+                onPress={() => setShowChefPanel(true)}
+              >
+                <Text style={styles.chefBtnText}>👨‍🍳 Chef</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
+                <Text style={styles.logoutBtnText}>Switch Restaurant</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       </View>
 
-      {/* Primary Category Navigation Pills */}
-      <PrimaryCategoryNav
-        categories={groupedMenu}
-        selectedId={selectedPrimaryId}
-        onSelect={handlePrimarySelect}
-        language={language}
-      />
+      {/* Primary Category Navigation Pills - hide on small screens */}
+      {screenWidth >= 992 && (
+        <PrimaryCategoryNav
+          categories={groupedMenu}
+          selectedId={selectedPrimaryId}
+          onSelect={handlePrimarySelect}
+          language={language}
+        />
+      )}
 
-      {/* Subcategory Tabs */}
-      <View style={styles.subcategoryBar}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.subcategoryScroll}>
-          {currentSubcategories.map((subcategory) => (
-            <TouchableOpacity
-              key={subcategory.id}
-              style={[
-                styles.subcategoryTab,
-                selectedSubcategoryId === subcategory.id && styles.subcategoryTabActive,
-              ]}
-              onPress={() => setSelectedSubcategoryId(subcategory.id)}
-            >
-              <Text
-                style={[
-                  styles.subcategoryTabText,
-                  selectedSubcategoryId === subcategory.id && styles.subcategoryTabTextActive,
-                ]}
-              >
-                {language === 'en' && subcategory.nameEn ? subcategory.nameEn : subcategory.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-        <TouchableOpacity
-          style={styles.historyButton}
-          onPress={() => setShowOrderHistory(true)}
-        >
-          <Text style={styles.historyButtonText}>📋 History</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Toolbar with Upsell Bar and History button */}
+      <View style={styles.toolBar}>
+        <View style={styles.toolBarLeft}>
+          <UpsellBar
+            suggestions={upsellSuggestions}
+            onSuggestionPress={handleUpsellPress}
+            mode={itemCount === 0 ? 'empty-cart' : 'has-items'}
+            language={language}
+          />
+        </View>
+              </View>
 
       <View style={styles.mainContent}>
-        {/* Menu Items Grid */}
+        {/* Menu Items Grid - Full width now */}
         <ScrollView style={styles.menuGrid} contentContainerStyle={styles.menuGridContent}>
-          {/* Show subcategory name as header */}
-          {currentSubcategory && (
-            <Text style={styles.subcategoryHeader}>
-              {language === 'en' && currentSubcategory.nameEn ? currentSubcategory.nameEn : currentSubcategory.name}
-            </Text>
-          )}
-          
-          <View style={styles.itemsRow}>
-            {currentSubcategory?.items.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.menuItemCard, { width: (screenWidth * 0.7 - 48) / 3 }]}
-                onPress={() => handleItemPress(item)}
-              >
-                {item.image && (
-                  <Image 
-                    source={{ uri: item.image }} 
-                    style={styles.menuItemImage} 
-                    resizeMode="cover"
-                  />
-                )}
-                <View style={styles.menuItemInfo}>
-                  <Text style={styles.menuItemName} numberOfLines={2}>
-                    {language === 'en' && item.nameEn ? item.nameEn : item.name}
+          {currentSubcategories.length > 0 ? (
+            currentSubcategories.map((subcategory) => (
+              <View key={subcategory.id} style={styles.subcategorySection}>
+                {/* Ribbon Header */}
+                <View style={styles.ribbonHeader}>
+                  <View style={styles.ribbonLine} />
+                  <Text style={styles.ribbonText}>
+                    {language === 'en' && subcategory.nameEn ? subcategory.nameEn : subcategory.name}
                   </Text>
-                  <Text style={styles.menuItemPrice}>${Number(item.price).toFixed(2)}</Text>
-                  {item.popular && (
-                    <View style={styles.popularBadge}>
-                      <Text style={styles.popularBadgeText}>⭐ Popular</Text>
-                    </View>
-                  )}
+                  <View style={styles.ribbonLine} />
                 </View>
-              </TouchableOpacity>
-            ))}
-          </View>
 
-          {/* If no items in subcategory */}
-          {currentSubcategory && currentSubcategory.items.length === 0 && (
+                {/* Items Grid */}
+                <View style={styles.itemsRow}>
+                  {subcategory.items.map((item) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={[styles.menuItemCard, { width: '31%' }]}
+                      onPress={() => handleItemPress(item)}
+                    >
+                      {item.image && (
+                        <Image
+                          source={{ uri: item.image }}
+                          style={styles.menuItemImage}
+                          resizeMode="cover"
+                        />
+                      )}
+                      <View style={styles.menuItemInfo}>
+                        <Text style={styles.menuItemName} numberOfLines={2}>
+                          {language === 'en' && item.nameEn ? item.nameEn : item.name}
+                        </Text>
+                        <Text style={styles.menuItemPrice}>${Number(item.price).toFixed(2)}</Text>
+                        {item.popular && (
+                          <View style={styles.popularBadge}>
+                            <Text style={styles.popularBadgeText}>⭐ Popular</Text>
+                          </View>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Empty state for subcategory with no items */}
+                {subcategory.items.length === 0 && (
+                  <View style={styles.emptySubcategory}>
+                    <Text style={styles.emptySubcategoryText}>No items in this section</Text>
+                  </View>
+                )}
+              </View>
+            ))
+          ) : (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateText}>No items in this category</Text>
             </View>
           )}
-
-          {/* If no subcategory selected */}
-          {!currentSubcategory && currentSubcategories.length === 0 && (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateText}>No subcategories available</Text>
-            </View>
-          )}
         </ScrollView>
 
-        {/* Cart Summary */}
-        <View style={styles.cartSummary}>
-          <Text style={styles.cartTitle}>🛒 Cart ({itemCount})</Text>
-          <ScrollView style={styles.cartItems}>
-            {state.items.map((item) => (
-              <View key={item.id} style={styles.cartItem}>
-                <View style={styles.cartItemMain}>
-                  <Text style={styles.cartItemQty}>{item.quantity}x</Text>
-                  <View style={styles.cartItemDetails}>
-                    <Text style={styles.cartItemName}>{item.name}</Text>
-                    {item.modifiers.length > 0 && (
-                      <Text style={styles.cartItemMods}>
-                        {item.modifiers.map((m) => m.name).join(', ')}
-                      </Text>
-                    )}
-                    {item.specialInstructions && (
-                      <Text style={styles.cartItemInstructions}>
-                        ⚠️ {item.specialInstructions}
-                      </Text>
-                    )}
-                  </View>
-                  <Text style={styles.cartItemPrice}>
-                    ${((Number(item.price) + item.modifiers.reduce((t, m) => t + Number(m.priceAdjustment), 0)) * item.quantity).toFixed(2)}
-                  </Text>
-                </View>
-                
-                {/* Cart Item Actions */}
-                <View style={styles.cartItemActions}>
-                  <TouchableOpacity
-                    style={styles.cartQtyBtn}
-                    onPress={() => handleUpdateCartQuantity(item.id, item.quantity - 1)}
-                  >
-                    <Text style={styles.cartQtyBtnText}>−</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.cartQtyDisplay}>{item.quantity}</Text>
-                  <TouchableOpacity
-                    style={styles.cartQtyBtn}
-                    onPress={() => handleUpdateCartQuantity(item.id, item.quantity + 1)}
-                  >
-                    <Text style={styles.cartQtyBtnText}>+</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.cartRemoveBtn}
-                    onPress={() => handleRemoveFromCart(item.id)}
-                  >
-                    <Text style={styles.cartRemoveBtnText}>🗑️</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-          </ScrollView>
-          <View style={styles.cartFooter}>
-            {itemCount > 0 && (
-              <TouchableOpacity style={styles.clearCartBtn} onPress={clearCart}>
-                <Text style={styles.clearCartBtnText}>Clear Cart</Text>
-              </TouchableOpacity>
-            )}
-            <View style={styles.cartSubtotal}>
-              <Text style={styles.cartSubtotalLabel}>Subtotal</Text>
-              <Text style={styles.cartSubtotalValue}>${subtotal.toFixed(2)}</Text>
+        {/* Floating Cart Button */}
+        <TouchableOpacity
+          style={styles.floatingCartButton}
+          onPress={() => setShowCart(true)}
+        >
+          <Text style={styles.floatingCartIcon}>🛒</Text>
+          {itemCount > 0 && (
+            <View style={styles.cartBadge}>
+              <Text style={styles.cartBadgeText}>{itemCount}</Text>
             </View>
-            <TouchableOpacity
-              style={[styles.checkoutButton, itemCount === 0 && styles.checkoutButtonDisabled]}
-              disabled={itemCount === 0}
-              onPress={() => setShowCheckout(true)}
-            >
-              <Text style={styles.checkoutButtonText}>Checkout</Text>
-            </TouchableOpacity>
+          )}
+          <Text style={styles.floatingCartTotal}>${subtotal.toFixed(2)}</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Cart Drawer */}
+      {showCart && (
+        <View style={styles.drawerOverlay}>
+          <TouchableOpacity
+            style={styles.drawerBackdrop}
+            onPress={() => setShowCart(false)}
+            activeOpacity={1}
+          />
+          <View style={styles.cartDrawer}>
+            <View style={styles.cartDrawerHeader}>
+              <Text style={styles.cartTitle}>🛒 Cart ({itemCount})</Text>
+              <TouchableOpacity onPress={() => setShowCart(false)}>
+                <Text style={styles.cartDrawerClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.cartItems}>
+              {state.items.map((item) => (
+                <View key={item.id} style={styles.cartItem}>
+                  <View style={styles.cartItemMain}>
+                    <Text style={styles.cartItemQty}>{item.quantity}x</Text>
+                    <View style={styles.cartItemDetails}>
+                      <Text style={styles.cartItemName}>{item.name}</Text>
+                      {item.modifiers.length > 0 && (
+                        <Text style={styles.cartItemMods}>
+                          {item.modifiers.map((m) => m.name).join(', ')}
+                        </Text>
+                      )}
+                      {item.specialInstructions && (
+                        <Text style={styles.cartItemInstructions}>
+                          ⚠️ {item.specialInstructions}
+                        </Text>
+                      )}
+                    </View>
+                    <Text style={styles.cartItemPrice}>
+                      ${((Number(item.price) + item.modifiers.reduce((t, m) => t + Number(m.priceAdjustment), 0)) * item.quantity).toFixed(2)}
+                    </Text>
+                  </View>
+
+                  {/* Cart Item Actions */}
+                  <View style={styles.cartItemActions}>
+                    <TouchableOpacity
+                      style={styles.cartQtyBtn}
+                      onPress={() => handleUpdateCartQuantity(item.id, item.quantity - 1)}
+                    >
+                      <Text style={styles.cartQtyBtnText}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.cartQtyDisplay}>{item.quantity}</Text>
+                    <TouchableOpacity
+                      style={styles.cartQtyBtn}
+                      onPress={() => handleUpdateCartQuantity(item.id, item.quantity + 1)}
+                    >
+                      <Text style={styles.cartQtyBtnText}>+</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.cartRemoveBtn}
+                      onPress={() => handleRemoveFromCart(item.id)}
+                    >
+                      <Text style={styles.cartRemoveBtnText}>🗑️</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+              {itemCount === 0 && (
+                <View style={styles.emptyCart}>
+                  <Text style={styles.emptyCartText}>Your cart is empty</Text>
+                </View>
+              )}
+            </ScrollView>
+            <View style={styles.cartFooter}>
+              {itemCount > 0 && (
+                <TouchableOpacity style={styles.clearCartBtn} onPress={clearCart}>
+                  <Text style={styles.clearCartBtnText}>Clear Cart</Text>
+                </TouchableOpacity>
+              )}
+              <View style={styles.cartSubtotal}>
+                <Text style={styles.cartSubtotalLabel}>Subtotal</Text>
+                <Text style={styles.cartSubtotalValue}>${subtotal.toFixed(2)}</Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.checkoutButton, itemCount === 0 && styles.checkoutButtonDisabled]}
+                disabled={itemCount === 0}
+                onPress={() => {
+                  setShowCart(false);
+                  setShowCheckout(true);
+                }}
+              >
+                <Text style={styles.checkoutButtonText}>Checkout</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
+      )}
+
+      {/* Left Menu Drawer */}
+      {showMenu && (
+        <View style={styles.drawerOverlay}>
+          <View style={styles.menuDrawer}>
+            <View style={styles.menuDrawerHeader}>
+              <Text style={styles.menuDrawerTitle}>Categories</Text>
+              <TouchableOpacity onPress={() => setShowMenu(false)}>
+                <Text style={styles.menuDrawerClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.menuDrawerContent}>
+              {groupedMenu.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.menuDrawerItem,
+                    selectedPrimaryId === category.id && styles.menuDrawerItemActive,
+                  ]}
+                  onPress={() => {
+                    handlePrimarySelect(category);
+                    setShowMenu(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.menuDrawerItemText,
+                      selectedPrimaryId === category.id && styles.menuDrawerItemTextActive,
+                    ]}
+                  >
+                    {language === 'en' && category.nameEn ? category.nameEn : category.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            {/* Admin options in drawer for small screens */}
+            <View style={styles.menuDrawerFooter}>
+              <TouchableOpacity
+                style={styles.menuDrawerAdminBtn}
+                onPress={() => {
+                  setShowMenu(false);
+                  setShowMenuItemManagement(true);
+                }}
+              >
+                <Text style={styles.menuDrawerAdminText}>🍽️ Items</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.menuDrawerAdminBtn}
+                onPress={() => {
+                  setShowMenu(false);
+                  setShowCategoryManagement(true);
+                }}
+              >
+                <Text style={styles.menuDrawerAdminText}>⚙️ Categories</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.menuDrawerAdminBtn}
+                onPress={() => {
+                  setShowMenu(false);
+                  setShowChefPanel(true);
+                }}
+              >
+                <Text style={styles.menuDrawerAdminText}>👨‍🍳 Chef</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.menuDrawerLogoutBtn}
+                onPress={() => {
+                  setShowMenu(false);
+                  onLogout();
+                }}
+              >
+                <Text style={styles.menuDrawerLogoutText}>Switch Restaurant</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={styles.drawerBackdrop}
+            onPress={() => setShowMenu(false)}
+            activeOpacity={1}
+          />
+        </View>
+      )}
 
       {/* Item Detail Modal */}
       {selectedItem && (
@@ -742,7 +982,20 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
         visible={showMenuItemManagement}
         onClose={() => setShowMenuItemManagement(false)}
         restaurantId={restaurantId}
+        language={language}
         onItemsUpdated={() => fetchGroupedMenu(language)}
+      />
+
+      {/* Chef Input Panel */}
+      <ChefInputPanel
+        visible={showChefPanel}
+        onClose={() => setShowChefPanel(false)}
+        menuItems={currentSubcategories.flatMap(sub => 
+          sub.items.map(item => ({ id: item.id, name: item.name, price: Number(item.price) }))
+        )}
+        chefPicks={chefPicks}
+        onSaveChefPicks={handleSaveChefPicks}
+        language={language}
       />
     </View>
   );
@@ -761,14 +1014,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#0f3460',
+    backgroundColor: '#1a1a2e',
     borderBottomWidth: 1,
-    borderBottomColor: '#16213e',
+    borderBottomColor: '#0f3460',
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  menuButton: {
+    backgroundColor: '#1a1a2e',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  menuButtonText: {
+    color: '#fff',
+    fontSize: 20,
   },
   logoContainer: {
     backgroundColor: '#1a1a2e',
@@ -816,6 +1082,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  chefBtn: {
+    borderColor: '#FF9800',
+  },
+  chefBtnText: {
+    color: '#FF9800',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   logoutBtn: {
     backgroundColor: '#1a1a2e',
     paddingHorizontal: 12,
@@ -852,48 +1126,65 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
-  // Subcategory bar (below primary pills)
-  subcategoryBar: {
+  // Toolbar (below primary pills)
+  toolBar: {
     backgroundColor: '#16213e',
     paddingVertical: 8,
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#0f3460',
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 50,
   },
-  subcategoryScroll: {
+  toolBarLeft: {
     flex: 1,
-  },
-  subcategoryTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginHorizontal: 4,
-    borderRadius: 6,
-    backgroundColor: '#1a1a2e',
-  },
-  subcategoryTabActive: {
-    backgroundColor: '#0f3460',
-    borderWidth: 1,
-    borderColor: '#e94560',
-  },
-  subcategoryTabText: {
-    color: '#999',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  subcategoryTabTextActive: {
-    color: '#fff',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   historyButton: {
     backgroundColor: '#0f3460',
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,
-    marginRight: 8,
   },
   historyButtonText: {
     color: '#fff',
     fontWeight: '600',
+  },
+  // Subcategory Section with Ribbon
+  subcategorySection: {
+    marginBottom: 20,
+  },
+  ribbonHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    marginTop: 8,
+    paddingHorizontal: 6,
+  },
+  ribbonLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e94560',
+  },
+  ribbonText: {
+    color: '#e94560',
+    fontSize: 16,
+    fontWeight: 'bold',
+    paddingHorizontal: 16,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  emptySubcategory: {
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  emptySubcategoryText: {
+    color: '#666',
+    fontSize: 14,
+    fontStyle: 'italic',
   },
   mainContent: {
     flex: 1,
@@ -904,22 +1195,17 @@ const styles = StyleSheet.create({
   },
   menuGridContent: {
     padding: 12,
-  },
-  subcategoryHeader: {
-    color: '#e94560',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    marginLeft: 6,
+    paddingBottom: 40,
   },
   itemsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   menuItemCard: {
     backgroundColor: '#16213e',
     borderRadius: 12,
-    margin: 6,
+    marginBottom: 8,
     overflow: 'hidden',
   },
   menuItemImage: {
@@ -961,19 +1247,170 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 16,
   },
-  cartSummary: {
-    width: width * 0.3,
+  // Floating Cart Button
+  floatingCartButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    backgroundColor: '#e94560',
+    borderRadius: 30,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  floatingCartIcon: {
+    fontSize: 24,
+  },
+  floatingCartTotal: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  cartBadge: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  cartBadgeText: {
+    color: '#e94560',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  // Cart Drawer
+  drawerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    flexDirection: 'row',
+  },
+  drawerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  cartDrawer: {
+    width: width * 0.7,
     backgroundColor: '#16213e',
-    borderLeftWidth: 1,
-    borderLeftColor: '#0f3460',
+    shadowColor: '#000',
+    shadowOffset: { width: -4, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 16,
+  },
+  // Left Menu Drawer
+  menuDrawer: {
+    width: width * 0.7,
+    backgroundColor: '#16213e',
+    shadowColor: '#000',
+    shadowOffset: { width: 4, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 16,
+  },
+  menuDrawerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#0f3460',
+  },
+  menuDrawerTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  menuDrawerClose: {
+    color: '#999',
+    fontSize: 24,
+    padding: 4,
+  },
+  menuDrawerContent: {
+    flex: 1,
+    padding: 8,
+  },
+  menuDrawerItem: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  menuDrawerItemActive: {
+    backgroundColor: '#e94560',
+  },
+  menuDrawerItemText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  menuDrawerItemTextActive: {
+    fontWeight: 'bold',
+  },
+  menuDrawerFooter: {
+    borderTopWidth: 1,
+    borderTopColor: '#0f3460',
+    padding: 12,
+  },
+  menuDrawerAdminBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 4,
+    backgroundColor: '#1a1a2e',
+  },
+  menuDrawerAdminText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  menuDrawerLogoutBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 8,
+    backgroundColor: '#0f3460',
+  },
+  menuDrawerLogoutText: {
+    color: '#999',
+    fontSize: 14,
+  },
+  cartDrawerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#0f3460',
+  },
+  cartDrawerClose: {
+    color: '#999',
+    fontSize: 24,
+    padding: 4,
+  },
+  emptyCart: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyCartText: {
+    color: '#666',
+    fontSize: 16,
   },
   cartTitle: {
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#0f3460',
   },
   cartItems: {
     flex: 1,
@@ -1104,10 +1541,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContent: {
-    width: width * 0.5,
-    maxHeight: height * 0.8,
+    width: '100%',
+    height: '100%',
     backgroundColor: '#16213e',
-    borderRadius: 16,
     overflow: 'hidden',
   },
   modalHeader: {
@@ -1199,8 +1635,8 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   modalFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'stretch',
     padding: 16,
     borderTopWidth: 1,
     borderTopColor: '#0f3460',
@@ -1209,8 +1645,10 @@ const styles = StyleSheet.create({
   quantitySelector: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#1a1a2e',
     borderRadius: 8,
+    alignSelf: 'center',
   },
   quantityButton: {
     width: 44,
@@ -1230,7 +1668,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   addToCartButton: {
-    flex: 1,
     backgroundColor: '#e94560',
     paddingVertical: 14,
     borderRadius: 8,

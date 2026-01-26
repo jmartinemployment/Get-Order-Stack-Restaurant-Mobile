@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
   Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { config } from '../config';
 
@@ -81,6 +82,13 @@ export function CategoryManagementScreen({
   onCategoriesUpdated,
 }: CategoryManagementScreenProps) {
   const API_URL = `${config.apiUrl}/api/restaurant/${restaurantId}`;
+  const { width: screenWidth } = useWindowDimensions();
+  
+  // Responsive columns: 1 for mobile, 2 for tablet, 3+ for large screens
+  const numColumns = screenWidth > 1400 ? 4 : screenWidth > 1000 ? 3 : screenWidth > 600 ? 2 : 1;
+  // Account for padding (16 * 2 = 32) and gaps between cards (12 * (numColumns - 1))
+  const contentWidth = screenWidth - 32;
+  const cardWidth = (contentWidth - (numColumns - 1) * 12) / numColumns;
 
   // Data state
   const [primaryCategories, setPrimaryCategories] = useState<PrimaryCategory[]>([]);
@@ -355,34 +363,38 @@ export function CategoryManagementScreen({
                     </Text>
                   </View>
                 ) : (
-                  primaryCategories.map((category) => (
-                    <View key={category.id} style={styles.categoryCard}>
-                      <View style={styles.categoryIcon}>
-                        <Text style={styles.categoryIconText}>{category.icon || '📋'}</Text>
+                  <View style={styles.cardsGrid}>
+                    {primaryCategories.map((category) => (
+                      <View key={category.id} style={[styles.categoryCard, { width: cardWidth }]}>
+                        <View style={styles.categoryCardHeader}>
+                          <View style={styles.categoryIcon}>
+                            <Text style={styles.categoryIconText}>{category.icon || '📋'}</Text>
+                          </View>
+                          <View style={styles.categoryActions}>
+                            <TouchableOpacity
+                              style={styles.actionBtn}
+                              onPress={() => openEditModal('primary', category)}
+                            >
+                              <Text style={styles.actionBtnText}>✏️</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.actionBtn, styles.deleteBtn]}
+                              onPress={() => setDeleteConfirm({ type: 'primary', item: category })}
+                            >
+                              <Text style={styles.deleteBtnText}>🗑️</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                        <View style={styles.categoryInfo}>
+                          <Text style={styles.categoryName}>{category.name}</Text>
+                          <Text style={styles.categoryNameEn}>
+                            {category.nameEn || '(No English name)'}
+                          </Text>
+                          <Text style={styles.categorySlug}>/{category.slug}</Text>
+                        </View>
                       </View>
-                      <View style={styles.categoryInfo}>
-                        <Text style={styles.categoryName}>{category.name}</Text>
-                        <Text style={styles.categoryNameEn}>
-                          {category.nameEn || '(No English name)'}
-                        </Text>
-                        <Text style={styles.categorySlug}>/{category.slug}</Text>
-                      </View>
-                      <View style={styles.categoryActions}>
-                        <TouchableOpacity
-                          style={styles.actionBtn}
-                          onPress={() => openEditModal('primary', category)}
-                        >
-                          <Text style={styles.actionBtnText}>✏️ Edit</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.actionBtn, styles.deleteBtn]}
-                          onPress={() => setDeleteConfirm({ type: 'primary', item: category })}
-                        >
-                          <Text style={styles.deleteBtnText}>🗑️</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))
+                    ))}
+                  </View>
                 )}
               </>
             ) : (
@@ -409,22 +421,36 @@ export function CategoryManagementScreen({
                     <Text style={styles.emptyStateText}>No subcategories yet</Text>
                   </View>
                 ) : (
-                  subcategories.map((subcategory) => (
-                    <View key={subcategory.id} style={styles.subcategoryCard}>
-                      <View style={styles.subcategoryInfo}>
-                        <Text style={styles.categoryName}>{subcategory.name}</Text>
-                        <Text style={styles.categoryNameEn}>
-                          {subcategory.nameEn || '(No English name)'}
-                        </Text>
+                  <View style={styles.cardsGrid}>
+                    {subcategories.map((subcategory) => (
+                      <View key={subcategory.id} style={[styles.subcategoryCard, { width: cardWidth }]}>
+                        <View style={styles.subcategoryCardHeader}>
+                          <View style={styles.subcategoryInfo}>
+                            <Text style={styles.categoryName}>{subcategory.name}</Text>
+                            <Text style={styles.categoryNameEn}>
+                              {subcategory.nameEn || '(No English name)'}
+                            </Text>
+                          </View>
+                          <View style={styles.categoryActions}>
+                            <TouchableOpacity
+                              style={styles.actionBtn}
+                              onPress={() => openEditModal('subcategory', subcategory)}
+                            >
+                              <Text style={styles.actionBtnText}>✏️</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.actionBtn, styles.deleteBtn]}
+                              onPress={() => setDeleteConfirm({ type: 'subcategory', item: subcategory })}
+                            >
+                              <Text style={styles.deleteBtnText}>🗑️</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
                         
                         {/* Assignment Selector */}
                         <View style={styles.assignmentRow}>
                           <Text style={styles.assignmentLabel}>Assigned to:</Text>
-                          <ScrollView 
-                            horizontal 
-                            showsHorizontalScrollIndicator={false}
-                            style={styles.assignmentScroll}
-                          >
+                          <View style={styles.assignmentChips}>
                             <TouchableOpacity
                               style={[
                                 styles.assignmentChip,
@@ -456,25 +482,11 @@ export function CategoryManagementScreen({
                                 </Text>
                               </TouchableOpacity>
                             ))}
-                          </ScrollView>
+                          </View>
                         </View>
                       </View>
-                      <View style={styles.categoryActions}>
-                        <TouchableOpacity
-                          style={styles.actionBtn}
-                          onPress={() => openEditModal('subcategory', subcategory)}
-                        >
-                          <Text style={styles.actionBtnText}>✏️ Edit</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.actionBtn, styles.deleteBtn]}
-                          onPress={() => setDeleteConfirm({ type: 'subcategory', item: subcategory })}
-                        >
-                          <Text style={styles.deleteBtnText}>🗑️</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))
+                    ))}
+                  </View>
                 )}
               </>
             )}
@@ -693,6 +705,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 16,
+    paddingBottom: 40,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -735,12 +748,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 8,
   },
-  categoryCard: {
+  cardsGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  categoryCard: {
     backgroundColor: '#16213e',
     borderRadius: 12,
     padding: 16,
+  },
+  categoryCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 12,
   },
   categoryIcon: {
@@ -795,26 +816,32 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   subcategoryCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
     backgroundColor: '#16213e',
     borderRadius: 12,
     padding: 16,
+  },
+  subcategoryCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 12,
   },
   subcategoryInfo: {
     flex: 1,
   },
   assignmentRow: {
-    marginTop: 12,
+    marginTop: 8,
+  },
+  assignmentChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 6,
   },
   assignmentLabel: {
     color: '#666',
     fontSize: 12,
-    marginBottom: 6,
-  },
-  assignmentScroll: {
-    flexGrow: 0,
+    marginBottom: 0,
   },
   assignmentChip: {
     backgroundColor: '#0f3460',

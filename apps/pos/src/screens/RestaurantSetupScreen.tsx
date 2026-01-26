@@ -32,8 +32,8 @@ export function RestaurantSetupScreen({ onRestaurantSelected }: RestaurantSetupS
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Select existing restaurant
-  const [restaurantId, setRestaurantId] = useState('');
+  // Select existing restaurant - hardcoded for testing
+  const [restaurantId, setRestaurantId] = useState('f2cfe8dd-48f3-4596-ab1e-22a28b23ad38');
   
   // Create new restaurant
   const [name, setName] = useState('');
@@ -283,6 +283,7 @@ const styles = StyleSheet.create({
   logo: {
     fontSize: 48,
     marginBottom: 8,
+    color: '#fff',
   },
   title: {
     fontSize: 28,

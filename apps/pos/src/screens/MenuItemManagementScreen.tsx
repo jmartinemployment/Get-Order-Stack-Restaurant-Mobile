@@ -10,17 +10,25 @@ import {
   Alert,
   ActivityIndicator,
   Dimensions,
-  Image,
   Switch,
 } from 'react-native';
 import { config } from '../config';
 
 // ============ Types ============
 
+interface PrimaryCategory {
+  id: string;
+  slug: string;
+  name: string;
+  nameEn: string | null;
+  icon: string | null;
+}
+
 interface Subcategory {
   id: string;
   name: string;
   nameEn: string | null;
+  primaryCategoryId: string | null;
 }
 
 interface MenuItem {
@@ -45,6 +53,7 @@ interface MenuItemManagementScreenProps {
   visible: boolean;
   onClose: () => void;
   restaurantId: string;
+  language: 'es' | 'en';
   onItemsUpdated?: () => void;
 }
 
@@ -56,13 +65,13 @@ type EditModalState = {
 // ============ Dietary Options ============
 
 const DIETARY_OPTIONS = [
-  { value: 'vegetarian', label: '🥬 Vegetarian' },
-  { value: 'vegan', label: '🌱 Vegan' },
-  { value: 'gluten-free', label: '🌾 Gluten-Free' },
-  { value: 'dairy-free', label: '🥛 Dairy-Free' },
-  { value: 'nut-free', label: '🥜 Nut-Free' },
-  { value: 'spicy', label: '🌶️ Spicy' },
-  { value: 'contains-alcohol', label: '🍷 Contains Alcohol' },
+  { value: 'vegetarian', label: '🥬 Vegetarian', labelEs: '🥬 Vegetariano' },
+  { value: 'vegan', label: '🌱 Vegan', labelEs: '🌱 Vegano' },
+  { value: 'gluten-free', label: '🌾 Gluten-Free', labelEs: '🌾 Sin Gluten' },
+  { value: 'dairy-free', label: '🥛 Dairy-Free', labelEs: '🥛 Sin Lácteos' },
+  { value: 'nut-free', label: '🥜 Nut-Free', labelEs: '🥜 Sin Nueces' },
+  { value: 'spicy', label: '🌶️ Spicy', labelEs: '🌶️ Picante' },
+  { value: 'contains-alcohol', label: '🍷 Contains Alcohol', labelEs: '🍷 Contiene Alcohol' },
 ];
 
 // ============ Main Component ============
@@ -71,19 +80,20 @@ export function MenuItemManagementScreen({
   visible,
   onClose,
   restaurantId,
+  language,
   onItemsUpdated,
 }: MenuItemManagementScreenProps) {
   const API_URL = `${config.apiUrl}/api/restaurant/${restaurantId}`;
 
   // Data state
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [primaryCategories, setPrimaryCategories] = useState<PrimaryCategory[]>([]);
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Filter state
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | 'all'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  // Filter state - now filters by PRIMARY category
+  const [selectedPrimaryCategoryId, setSelectedPrimaryCategoryId] = useState<string | 'all'>('all');
 
   // UI state
   const [editModal, setEditModal] = useState<EditModalState>(null);
@@ -91,6 +101,7 @@ export function MenuItemManagementScreen({
 
   // Form state
   const [formData, setFormData] = useState({
+    primaryCategoryId: '',
     categoryId: '',
     name: '',
     nameEn: '',
@@ -110,20 +121,23 @@ export function MenuItemManagementScreen({
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [itemsRes, catsRes] = await Promise.all([
+      const [itemsRes, primaryRes, subRes] = await Promise.all([
         fetch(`${API_URL}/menu/items`),
+        fetch(`${API_URL}/primary-categories`),
         fetch(`${API_URL}/menu/categories`),
       ]);
 
-      if (!itemsRes.ok || !catsRes.ok) {
+      if (!itemsRes.ok || !primaryRes.ok || !subRes.ok) {
         throw new Error('Failed to fetch data');
       }
 
       const itemsData = await itemsRes.json();
-      const catsData = await catsRes.json();
+      const primaryData = await primaryRes.json();
+      const subData = await subRes.json();
 
       setMenuItems(itemsData);
-      setSubcategories(catsData);
+      setPrimaryCategories(primaryData);
+      setSubcategories(subData);
     } catch (err) {
       Alert.alert('Error', 'Failed to load menu items. Please try again.');
       console.error('Fetch error:', err);
@@ -140,13 +154,21 @@ export function MenuItemManagementScreen({
 
   // ============ Filtered Items ============
 
+  // Build a map of subcategoryId -> primaryCategoryId for filtering
+  const subcategoryToPrimaryMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    subcategories.forEach((sub) => {
+      if (sub.primaryCategoryId) {
+        map[sub.id] = sub.primaryCategoryId;
+      }
+    });
+    return map;
+  }, [subcategories]);
+
   const filteredItems = menuItems.filter((item) => {
-    const matchesCategory = selectedCategoryId === 'all' || item.categoryId === selectedCategoryId;
-    const matchesSearch =
-      !searchQuery ||
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.nameEn && item.nameEn.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesCategory && matchesSearch;
+    if (selectedPrimaryCategoryId === 'all') return true;
+    const itemPrimaryCategoryId = subcategoryToPrimaryMap[item.categoryId];
+    return itemPrimaryCategoryId === selectedPrimaryCategoryId;
   });
 
   // ============ CRUD Operations ============
@@ -156,15 +178,24 @@ export function MenuItemManagementScreen({
 
     // Validation
     if (!formData.name.trim()) {
-      Alert.alert('Validation Error', 'Name (Spanish) is required');
+      Alert.alert(
+        language === 'es' ? 'Error de Validación' : 'Validation Error',
+        language === 'es' ? 'El nombre (Español) es requerido' : 'Name (Spanish) is required'
+      );
       return;
     }
     if (!formData.categoryId) {
-      Alert.alert('Validation Error', 'Category is required');
+      Alert.alert(
+        language === 'es' ? 'Error de Validación' : 'Validation Error',
+        language === 'es' ? 'La categoría es requerida' : 'Category is required'
+      );
       return;
     }
     if (!formData.price || isNaN(parseFloat(formData.price))) {
-      Alert.alert('Validation Error', 'Valid price is required');
+      Alert.alert(
+        language === 'es' ? 'Error de Validación' : 'Validation Error',
+        language === 'es' ? 'Se requiere un precio válido' : 'Valid price is required'
+      );
       return;
     }
 
@@ -207,7 +238,12 @@ export function MenuItemManagementScreen({
       await fetchData();
       onItemsUpdated?.();
 
-      Alert.alert('Success', `Item ${editModal.mode === 'create' ? 'created' : 'updated'} successfully`);
+      Alert.alert(
+        language === 'es' ? 'Éxito' : 'Success',
+        language === 'es'
+          ? `Artículo ${editModal.mode === 'create' ? 'creado' : 'actualizado'} exitosamente`
+          : `Item ${editModal.mode === 'create' ? 'created' : 'updated'} successfully`
+      );
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to save item');
     } finally {
@@ -232,9 +268,12 @@ export function MenuItemManagementScreen({
       await fetchData();
       onItemsUpdated?.();
 
-      Alert.alert('Success', 'Item deleted successfully');
+      Alert.alert(
+        language === 'es' ? 'Éxito' : 'Success',
+        language === 'es' ? 'Artículo eliminado exitosamente' : 'Item deleted successfully'
+      );
     } catch (err) {
-      Alert.alert('Error', 'Failed to delete item');
+      Alert.alert('Error', language === 'es' ? 'Error al eliminar artículo' : 'Failed to delete item');
     } finally {
       setSaving(false);
     }
@@ -256,15 +295,18 @@ export function MenuItemManagementScreen({
       await fetchData();
       onItemsUpdated?.();
     } catch (err) {
-      Alert.alert('Error', 'Failed to update item status');
+      Alert.alert('Error', language === 'es' ? 'Error al actualizar estado' : 'Failed to update item status');
     }
   }
 
   // ============ Form Helpers ============
 
   function resetForm() {
+    const firstPrimary = primaryCategories[0]?.id || '';
+    const firstSubInPrimary = subcategories.find(s => s.primaryCategoryId === firstPrimary)?.id || '';
     setFormData({
-      categoryId: subcategories[0]?.id || '',
+      primaryCategoryId: firstPrimary,
+      categoryId: firstSubInPrimary,
       name: '',
       nameEn: '',
       description: '',
@@ -281,14 +323,14 @@ export function MenuItemManagementScreen({
 
   function openCreateModal() {
     resetForm();
-    if (selectedCategoryId !== 'all') {
-      setFormData((prev) => ({ ...prev, categoryId: selectedCategoryId }));
-    }
     setEditModal({ mode: 'create' });
   }
 
   function openEditModal(item: MenuItem) {
+    // Get the primary category from the subcategory
+    const itemPrimaryCategoryId = subcategoryToPrimaryMap[item.categoryId] || primaryCategories[0]?.id || '';
     setFormData({
+      primaryCategoryId: itemPrimaryCategoryId,
       categoryId: item.categoryId,
       name: item.name,
       nameEn: item.nameEn || '',
@@ -314,11 +356,39 @@ export function MenuItemManagementScreen({
     }));
   }
 
+  // Handle primary category change - reset subcategory to first available
+  function handlePrimaryCategoryChange(primaryId: string) {
+    const firstSubInPrimary = subcategories.find(s => s.primaryCategoryId === primaryId)?.id || '';
+    setFormData(prev => ({
+      ...prev,
+      primaryCategoryId: primaryId,
+      categoryId: firstSubInPrimary,
+    }));
+  }
+
+  // Get subcategories filtered by selected primary category
+  const filteredSubcategoriesForForm = subcategories.filter(
+    s => s.primaryCategoryId === formData.primaryCategoryId
+  );
+
   // ============ Helpers ============
 
   function getCategoryName(categoryId: string): string {
     const cat = subcategories.find((c) => c.id === categoryId);
-    return cat?.name || 'Unknown';
+    if (!cat) return 'Unknown';
+    return language === 'en' && cat.nameEn ? cat.nameEn : cat.name;
+  }
+
+  function getPrimaryCategoryName(cat: PrimaryCategory): string {
+    return language === 'en' && cat.nameEn ? cat.nameEn : cat.name;
+  }
+
+  // Count items per primary category
+  function getItemCountForPrimaryCategory(primaryCategoryId: string): number {
+    return menuItems.filter((item) => {
+      const itemPrimaryCategoryId = subcategoryToPrimaryMap[item.categoryId];
+      return itemPrimaryCategoryId === primaryCategoryId;
+    }).length;
   }
 
   // ============ Main Render ============
@@ -328,78 +398,78 @@ export function MenuItemManagementScreen({
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="fullScreen">
       <View style={styles.container}>
-        {/* Header */}
+        {/* Header with Close (X) on top, Add Item below */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>🍽️ Menu Item Management</Text>
-          <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-            <Text style={styles.closeBtnText}>✕ Close</Text>
-          </TouchableOpacity>
+          <Text style={styles.headerTitle}>
+            🍽️ {language === 'es' ? 'Gestión de Artículos' : 'Menu Item Management'}
+          </Text>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+              <Text style={styles.closeBtnText}>✕</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.addBtn} onPress={openCreateModal}>
+              <Text style={styles.addBtnText}>+ {language === 'es' ? 'Agregar' : 'Add Item'}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Filters */}
+        {/* Primary Category Filter Pills */}
         <View style={styles.filtersBar}>
-          <View style={styles.searchContainer}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search items..."
-              placeholderTextColor="#666"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryFilter}>
-            <TouchableOpacity
-              style={[styles.filterChip, selectedCategoryId === 'all' && styles.filterChipActive]}
-              onPress={() => setSelectedCategoryId('all')}
+          <TouchableOpacity
+            style={[styles.filterChip, selectedPrimaryCategoryId === 'all' && styles.filterChipActive]}
+            onPress={() => setSelectedPrimaryCategoryId('all')}
+          >
+            <Text
+              style={[
+                styles.filterChipText,
+                selectedPrimaryCategoryId === 'all' && styles.filterChipTextActive,
+              ]}
             >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  selectedCategoryId === 'all' && styles.filterChipTextActive,
-                ]}
-              >
-                All ({menuItems.length})
-              </Text>
-            </TouchableOpacity>
-            {subcategories.map((cat) => {
-              const count = menuItems.filter((i) => i.categoryId === cat.id).length;
-              return (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[styles.filterChip, selectedCategoryId === cat.id && styles.filterChipActive]}
-                  onPress={() => setSelectedCategoryId(cat.id)}
-                >
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      selectedCategoryId === cat.id && styles.filterChipTextActive,
-                    ]}
-                  >
-                    {cat.name} ({count})
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-          <TouchableOpacity style={styles.addBtn} onPress={openCreateModal}>
-            <Text style={styles.addBtnText}>+ Add Item</Text>
+              {language === 'es' ? 'Todos' : 'All'} ({menuItems.length})
+            </Text>
           </TouchableOpacity>
+          {primaryCategories.map((cat) => {
+            const count = getItemCountForPrimaryCategory(cat.id);
+            return (
+              <TouchableOpacity
+                key={cat.id}
+                style={[
+                  styles.filterChip,
+                  selectedPrimaryCategoryId === cat.id && styles.filterChipActive,
+                ]}
+                onPress={() => setSelectedPrimaryCategoryId(cat.id)}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    selectedPrimaryCategoryId === cat.id && styles.filterChipTextActive,
+                  ]}
+                >
+                  {cat.icon} {getPrimaryCategoryName(cat)} ({count})
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {/* Content */}
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#e94560" />
-            <Text style={styles.loadingText}>Loading menu items...</Text>
+            <Text style={styles.loadingText}>
+              {language === 'es' ? 'Cargando artículos...' : 'Loading menu items...'}
+            </Text>
           </View>
         ) : (
           <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
             {filteredItems.length === 0 ? (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyStateText}>No items found</Text>
+                <Text style={styles.emptyStateText}>
+                  {language === 'es' ? 'No se encontraron artículos' : 'No items found'}
+                </Text>
                 <Text style={styles.emptyStateSubtext}>
-                  {searchQuery
-                    ? 'Try a different search term'
+                  {language === 'es'
+                    ? 'Agrega tu primer artículo para comenzar'
                     : 'Add your first menu item to get started'}
                 </Text>
               </View>
@@ -409,48 +479,44 @@ export function MenuItemManagementScreen({
                   key={item.id}
                   style={[styles.itemCard, item.eightySixed && styles.itemCard86]}
                 >
-                  {/* Item Image */}
-                  <View style={styles.itemImageContainer}>
-                    {item.image ? (
-                      <Image source={{ uri: item.image }} style={styles.itemImage} resizeMode="cover" />
-                    ) : (
-                      <View style={styles.itemImagePlaceholder}>
-                        <Text style={styles.itemImagePlaceholderText}>🍽️</Text>
-                      </View>
-                    )}
-                    {item.eightySixed && (
-                      <View style={styles.badge86}>
-                        <Text style={styles.badge86Text}>86'd</Text>
-                      </View>
-                    )}
-                    {item.popular && !item.eightySixed && (
-                      <View style={styles.badgePopular}>
-                        <Text style={styles.badgePopularText}>⭐</Text>
-                      </View>
-                    )}
-                  </View>
-
                   {/* Item Info */}
                   <View style={styles.itemInfo}>
-                    <Text style={styles.itemName}>{item.name}</Text>
-                    {item.nameEn && <Text style={styles.itemNameEn}>{item.nameEn}</Text>}
+                    <View style={styles.itemNameRow}>
+                      <Text style={styles.itemName}>
+                        {language === 'en' && item.nameEn ? item.nameEn : item.name}
+                      </Text>
+                      {item.eightySixed && (
+                        <View style={styles.badge86Inline}>
+                          <Text style={styles.badge86Text}>86'd</Text>
+                        </View>
+                      )}
+                      {item.popular && !item.eightySixed && (
+                        <Text style={styles.badgePopularInline}>⭐</Text>
+                      )}
+                    </View>
                     <Text style={styles.itemCategory}>{getCategoryName(item.categoryId)}</Text>
                     <View style={styles.itemMeta}>
                       <Text style={styles.itemPrice}>${Number(item.price).toFixed(2)}</Text>
                       {item.cost && (
                         <Text style={styles.itemCost}>
-                          Cost: ${Number(item.cost).toFixed(2)} (
-                          {Math.round(((item.price - item.cost) / item.price) * 100)}% margin)
+                          {language === 'es' ? 'Costo' : 'Cost'}: ${Number(item.cost).toFixed(2)} (
+                          {Math.round(((item.price - item.cost) / item.price) * 100)}% {language === 'es' ? 'margen' : 'margin'})
                         </Text>
                       )}
                     </View>
                     {item.dietary && item.dietary.length > 0 && (
                       <View style={styles.dietaryTags}>
-                        {item.dietary.map((d) => (
-                          <View key={d} style={styles.dietaryTag}>
-                            <Text style={styles.dietaryTagText}>{d}</Text>
-                          </View>
-                        ))}
+                        {item.dietary.map((d) => {
+                          const option = DIETARY_OPTIONS.find(opt => opt.value === d);
+                          const label = option 
+                            ? (language === 'es' ? option.labelEs : option.label)
+                            : d;
+                          return (
+                            <View key={d} style={styles.dietaryTag}>
+                              <Text style={styles.dietaryTagText}>{label}</Text>
+                            </View>
+                          );
+                        })}
                       </View>
                     )}
                   </View>
@@ -461,10 +527,14 @@ export function MenuItemManagementScreen({
                       style={[styles.actionBtn, item.eightySixed && styles.actionBtn86Active]}
                       onPress={() => handleToggle86(item)}
                     >
-                      <Text style={styles.actionBtnText}>{item.eightySixed ? '✅ Restore' : '🚫 86'}</Text>
+                      <Text style={styles.actionBtnText}>
+                        {item.eightySixed
+                          ? (language === 'es' ? '✅ Restaurar' : '✅ Restore')
+                          : '🚫 86'}
+                      </Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.actionBtn} onPress={() => openEditModal(item)}>
-                      <Text style={styles.actionBtnText}>✏️ Edit</Text>
+                      <Text style={styles.actionBtnText}>✏️ {language === 'es' ? 'Editar' : 'Edit'}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.actionBtn, styles.deleteBtn]}
@@ -485,7 +555,9 @@ export function MenuItemManagementScreen({
             <View style={styles.editModal}>
               <View style={styles.editModalHeader}>
                 <Text style={styles.editModalTitle}>
-                  {editModal.mode === 'create' ? 'Add Menu Item' : 'Edit Menu Item'}
+                  {editModal.mode === 'create'
+                    ? (language === 'es' ? 'Agregar Artículo' : 'Add Menu Item')
+                    : (language === 'es' ? 'Editar Artículo' : 'Edit Menu Item')}
                 </Text>
                 <TouchableOpacity onPress={() => setEditModal(null)}>
                   <Text style={styles.editModalClose}>✕</Text>
@@ -493,11 +565,45 @@ export function MenuItemManagementScreen({
               </View>
 
               <ScrollView style={styles.editModalBody}>
-                {/* Category */}
-                <Text style={styles.inputLabel}>Category *</Text>
+                {/* Primary Category */}
+                <Text style={styles.inputLabel}>
+                  {language === 'es' ? 'Categoría Principal *' : 'Primary Category *'}
+                </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View style={styles.categoryPicker}>
-                    {subcategories.map((cat) => (
+                    {primaryCategories.map((cat) => (
+                      <TouchableOpacity
+                        key={cat.id}
+                        style={[
+                          styles.categoryOption,
+                          formData.primaryCategoryId === cat.id && styles.categoryOptionSelected,
+                        ]}
+                        onPress={() => handlePrimaryCategoryChange(cat.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.categoryOptionText,
+                            formData.primaryCategoryId === cat.id && styles.categoryOptionTextSelected,
+                          ]}
+                        >
+                          {cat.icon} {language === 'en' && cat.nameEn ? cat.nameEn : cat.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+
+                {/* Subcategory (filtered by primary) */}
+                <Text style={styles.inputLabel}>
+                  {language === 'es' ? 'Subcategoría *' : 'Subcategory *'}
+                </Text>
+                <View style={styles.categoryPickerWrap}>
+                  {filteredSubcategoriesForForm.length === 0 ? (
+                    <Text style={styles.noSubcategoriesText}>
+                      {language === 'es' ? 'No hay subcategorías' : 'No subcategories available'}
+                    </Text>
+                  ) : (
+                    filteredSubcategoriesForForm.map((cat) => (
                       <TouchableOpacity
                         key={cat.id}
                         style={[
@@ -512,15 +618,17 @@ export function MenuItemManagementScreen({
                             formData.categoryId === cat.id && styles.categoryOptionTextSelected,
                           ]}
                         >
-                          {cat.name}
+                          {language === 'en' && cat.nameEn ? cat.nameEn : cat.name}
                         </Text>
                       </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
+                    ))
+                  )}
+                </View>
 
                 {/* Name (Spanish) */}
-                <Text style={styles.inputLabel}>Name (Spanish) *</Text>
+                <Text style={styles.inputLabel}>
+                  {language === 'es' ? 'Nombre (Español) *' : 'Name (Spanish) *'}
+                </Text>
                 <TextInput
                   style={styles.input}
                   value={formData.name}
@@ -530,7 +638,9 @@ export function MenuItemManagementScreen({
                 />
 
                 {/* Name (English) */}
-                <Text style={styles.inputLabel}>Name (English)</Text>
+                <Text style={styles.inputLabel}>
+                  {language === 'es' ? 'Nombre (Inglés)' : 'Name (English)'}
+                </Text>
                 <TextInput
                   style={styles.input}
                   value={formData.nameEn}
@@ -540,19 +650,23 @@ export function MenuItemManagementScreen({
                 />
 
                 {/* Description (Spanish) */}
-                <Text style={styles.inputLabel}>Description (Spanish)</Text>
+                <Text style={styles.inputLabel}>
+                  {language === 'es' ? 'Descripción (Español)' : 'Description (Spanish)'}
+                </Text>
                 <TextInput
                   style={[styles.input, styles.inputMultiline]}
                   value={formData.description}
                   onChangeText={(text) => setFormData({ ...formData, description: text })}
-                  placeholder="Descripción del plato..."
+                  placeholder={language === 'es' ? 'Descripción del plato...' : 'Dish description...'}
                   placeholderTextColor="#666"
                   multiline
                   numberOfLines={2}
                 />
 
                 {/* Description (English) */}
-                <Text style={styles.inputLabel}>Description (English)</Text>
+                <Text style={styles.inputLabel}>
+                  {language === 'es' ? 'Descripción (Inglés)' : 'Description (English)'}
+                </Text>
                 <TextInput
                   style={[styles.input, styles.inputMultiline]}
                   value={formData.descriptionEn}
@@ -566,7 +680,9 @@ export function MenuItemManagementScreen({
                 {/* Price & Cost Row */}
                 <View style={styles.rowInputs}>
                   <View style={styles.halfInput}>
-                    <Text style={styles.inputLabel}>Price ($) *</Text>
+                    <Text style={styles.inputLabel}>
+                      {language === 'es' ? 'Precio ($) *' : 'Price ($) *'}
+                    </Text>
                     <TextInput
                       style={styles.input}
                       value={formData.price}
@@ -577,7 +693,9 @@ export function MenuItemManagementScreen({
                     />
                   </View>
                   <View style={styles.halfInput}>
-                    <Text style={styles.inputLabel}>Cost ($)</Text>
+                    <Text style={styles.inputLabel}>
+                      {language === 'es' ? 'Costo ($)' : 'Cost ($)'}
+                    </Text>
                     <TextInput
                       style={styles.input}
                       value={formData.cost}
@@ -590,7 +708,9 @@ export function MenuItemManagementScreen({
                 </View>
 
                 {/* Image URL */}
-                <Text style={styles.inputLabel}>Image URL</Text>
+                <Text style={styles.inputLabel}>
+                  {language === 'es' ? 'URL de Imagen' : 'Image URL'}
+                </Text>
                 <TextInput
                   style={styles.input}
                   value={formData.image}
@@ -601,7 +721,9 @@ export function MenuItemManagementScreen({
                 />
 
                 {/* Prep Time */}
-                <Text style={styles.inputLabel}>Prep Time (minutes)</Text>
+                <Text style={styles.inputLabel}>
+                  {language === 'es' ? 'Tiempo de Preparación (minutos)' : 'Prep Time (minutes)'}
+                </Text>
                 <TextInput
                   style={styles.input}
                   value={formData.prepTimeMinutes}
@@ -613,7 +735,9 @@ export function MenuItemManagementScreen({
 
                 {/* Toggles */}
                 <View style={styles.toggleRow}>
-                  <Text style={styles.toggleLabel}>Popular Item</Text>
+                  <Text style={styles.toggleLabel}>
+                    {language === 'es' ? 'Artículo Popular' : 'Popular Item'}
+                  </Text>
                   <Switch
                     value={formData.popular}
                     onValueChange={(value) => setFormData({ ...formData, popular: value })}
@@ -623,7 +747,9 @@ export function MenuItemManagementScreen({
                 </View>
 
                 <View style={styles.toggleRow}>
-                  <Text style={styles.toggleLabel}>Available</Text>
+                  <Text style={styles.toggleLabel}>
+                    {language === 'es' ? 'Disponible' : 'Available'}
+                  </Text>
                   <Switch
                     value={formData.available}
                     onValueChange={(value) => setFormData({ ...formData, available: value })}
@@ -633,7 +759,9 @@ export function MenuItemManagementScreen({
                 </View>
 
                 {/* Dietary Tags */}
-                <Text style={styles.inputLabel}>Dietary Tags</Text>
+                <Text style={styles.inputLabel}>
+                  {language === 'es' ? 'Etiquetas Dietéticas' : 'Dietary Tags'}
+                </Text>
                 <View style={styles.dietaryPicker}>
                   {DIETARY_OPTIONS.map((option) => (
                     <TouchableOpacity
@@ -650,7 +778,7 @@ export function MenuItemManagementScreen({
                           formData.dietary.includes(option.value) && styles.dietaryOptionTextSelected,
                         ]}
                       >
-                        {option.label}
+                        {language === 'es' ? option.labelEs : option.label}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -663,7 +791,9 @@ export function MenuItemManagementScreen({
                   onPress={() => setEditModal(null)}
                   disabled={saving}
                 >
-                  <Text style={styles.cancelBtnText}>Cancel</Text>
+                  <Text style={styles.cancelBtnText}>
+                    {language === 'es' ? 'Cancelar' : 'Cancel'}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
@@ -674,7 +804,9 @@ export function MenuItemManagementScreen({
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
                     <Text style={styles.saveBtnText}>
-                      {editModal.mode === 'create' ? 'Create Item' : 'Save Changes'}
+                      {editModal.mode === 'create'
+                        ? (language === 'es' ? 'Crear Artículo' : 'Create Item')
+                        : (language === 'es' ? 'Guardar Cambios' : 'Save Changes')}
                     </Text>
                   )}
                 </TouchableOpacity>
@@ -687,10 +819,13 @@ export function MenuItemManagementScreen({
         {deleteConfirm && (
           <View style={styles.modalOverlay}>
             <View style={styles.confirmModal}>
-              <Text style={styles.confirmTitle}>Delete Menu Item?</Text>
+              <Text style={styles.confirmTitle}>
+                {language === 'es' ? '¿Eliminar Artículo?' : 'Delete Menu Item?'}
+              </Text>
               <Text style={styles.confirmMessage}>
-                Are you sure you want to delete "{deleteConfirm.name}"?
-                {'\n\n'}This action cannot be undone.
+                {language === 'es'
+                  ? `¿Estás seguro de que quieres eliminar "${deleteConfirm.name}"?\n\nEsta acción no se puede deshacer.`
+                  : `Are you sure you want to delete "${deleteConfirm.name}"?\n\nThis action cannot be undone.`}
               </Text>
               <View style={styles.confirmActions}>
                 <TouchableOpacity
@@ -698,7 +833,9 @@ export function MenuItemManagementScreen({
                   onPress={() => setDeleteConfirm(null)}
                   disabled={saving}
                 >
-                  <Text style={styles.confirmCancelText}>Cancel</Text>
+                  <Text style={styles.confirmCancelText}>
+                    {language === 'es' ? 'Cancelar' : 'Cancel'}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.confirmDeleteBtn, saving && styles.saveBtnDisabled]}
@@ -708,7 +845,9 @@ export function MenuItemManagementScreen({
                   {saving ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
-                    <Text style={styles.confirmDeleteText}>Delete</Text>
+                    <Text style={styles.confirmDeleteText}>
+                      {language === 'es' ? 'Eliminar' : 'Delete'}
+                    </Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -728,6 +867,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#1a1a2e',
+    paddingTop: 24,
   },
   header: {
     flexDirection: 'row',
@@ -743,43 +883,46 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
   },
+  headerActions: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
   closeBtn: {
     backgroundColor: '#1a1a2e',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 6,
   },
   closeBtnText: {
     color: '#e94560',
-    fontSize: 14,
+    fontSize: 18,
     fontWeight: '600',
+  },
+  addBtn: {
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  addBtnText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
   },
   filtersBar: {
     backgroundColor: '#16213e',
     padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-  },
-  searchContainer: {
-    width: 200,
-  },
-  searchInput: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 8,
-    padding: 10,
-    color: '#fff',
-    fontSize: 14,
-  },
-  categoryFilter: {
-    flex: 1,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   filterChip: {
     backgroundColor: '#1a1a2e',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    marginRight: 8,
   },
   filterChipActive: {
     backgroundColor: '#e94560',
@@ -790,17 +933,6 @@ const styles = StyleSheet.create({
   },
   filterChipTextActive: {
     color: '#fff',
-  },
-  addBtn: {
-    backgroundColor: '#4CAF50',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 6,
-  },
-  addBtnText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
   },
   loadingContainer: {
     flex: 1,
@@ -894,12 +1026,25 @@ const styles = StyleSheet.create({
   },
   itemInfo: {
     flex: 1,
-    marginLeft: 12,
+  },
+  itemNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   itemName: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  badge86Inline: {
+    backgroundColor: '#f44336',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  badgePopularInline: {
+    fontSize: 14,
   },
   itemNameEn: {
     color: '#999',
@@ -1037,6 +1182,12 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 4,
   },
+  categoryPickerWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingVertical: 4,
+  },
   categoryOption: {
     backgroundColor: '#1a1a2e',
     paddingHorizontal: 14,
@@ -1056,6 +1207,12 @@ const styles = StyleSheet.create({
   categoryOptionTextSelected: {
     color: '#fff',
   },
+  noSubcategoriesText: {
+    color: '#666',
+    fontSize: 13,
+    fontStyle: 'italic',
+    paddingVertical: 10,
+  },
   toggleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1072,6 +1229,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     marginTop: 8,
+    alignItems: 'flex-start',
   },
   dietaryOption: {
     backgroundColor: '#1a1a2e',
@@ -1080,6 +1238,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#0f3460',
+    flexShrink: 1,
+    minWidth: 0,
   },
   dietaryOptionSelected: {
     backgroundColor: '#0f3460',
