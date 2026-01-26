@@ -166,8 +166,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 8,
-    marginRight: 12,
-    flex: 1,
   },
   headerText: {
     color: '#fff',
