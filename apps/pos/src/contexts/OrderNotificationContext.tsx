@@ -22,6 +22,7 @@ interface Order {
   orderNumber: string;
   status: 'pending' | 'confirmed' | 'preparing' | 'ready' | 'completed' | 'cancelled';
   orderType: 'dine-in' | 'pickup' | 'delivery';
+  sourceDeviceId?: string;
   createdAt: string;
   confirmedAt?: string;
   preparingAt?: string;
@@ -99,20 +100,23 @@ export function OrderNotificationProvider({ children }: OrderNotificationProvide
   const [socketConnected, setSocketConnected] = useState(false);
   const [restaurantId, setRestaurantId] = useState<string | null>(null);
 
-  // Fetch active orders from API
+  // Fetch active orders from API - only orders created by THIS device
   const refreshOrders = useCallback(async () => {
     if (!restaurantId) return;
 
+    const deviceId = posSocketService.getDeviceId();
+
     try {
       const response = await fetch(
-        `${config.apiUrl}/api/restaurant/${restaurantId}/orders?status=pending,confirmed,preparing,ready&limit=50`
+        `${config.apiUrl}/api/restaurant/${restaurantId}/orders?status=pending,confirmed,preparing,ready&sourceDeviceId=${deviceId}&limit=50`
       );
 
       if (response.ok) {
         const orders = await response.json();
-        // Filter to only active (non-completed, non-cancelled) orders
+        // Filter to only active orders from this device
         const active = orders.filter((o: Order) =>
-          ['pending', 'confirmed', 'preparing', 'ready'].includes(o.status)
+          ['pending', 'confirmed', 'preparing', 'ready'].includes(o.status) &&
+          o.sourceDeviceId === deviceId
         );
         setActiveOrders(active);
       }
@@ -121,9 +125,19 @@ export function OrderNotificationProvider({ children }: OrderNotificationProvide
     }
   }, [restaurantId]);
 
-  // Handle order events from socket
+  // Handle order events from socket - only process orders from THIS device
   const handleOrderEvent = useCallback((order: Order, eventType: 'new' | 'updated') => {
     if (!order) return;
+
+    const deviceId = posSocketService.getDeviceId();
+
+    // IMPORTANT: Only process orders that originated from THIS device
+    if (order.sourceDeviceId !== deviceId) {
+      console.log(`[OrderNotification] Ignoring order ${order.orderNumber} - not from this device (${order.sourceDeviceId} !== ${deviceId})`);
+      return;
+    }
+
+    console.log(`[OrderNotification] Processing order ${order.orderNumber} (${eventType}) - status: ${order.status}`);
 
     // Update activeOrders list
     setActiveOrders(prev => {
