@@ -5,10 +5,30 @@
 
 ## Project Overview
 React Native monorepo containing two tablet applications for restaurant operations:
-- **POS (Point of Sale)** - Order taking and checkout for front-of-house staff
+- **POS (Point of Sale / Order Entry)** - Order taking for front-of-house staff
 - **KDS (Kitchen Display System)** - Order management for kitchen staff
 
 ## Current Status: ✅ DEPLOYED TO PRODUCTION
+
+---
+
+## 🎯 IMMEDIATE PRIORITY: Saturday Demo
+
+**See:** [`docs/IMPLEMENTATION_PLAN_DEMO.md`](./IMPLEMENTATION_PLAN_DEMO.md) for detailed implementation instructions.
+
+### Demo Flow
+```
+Order Entry → KDS → Order Entry (Pending Orders)
+     │          │           │
+   Create    Update      Complete
+   Order     Status      Order
+```
+
+### Priority 1: Fix Upsell Bar
+Connect AI suggestions to real menu data (currently hardcoded)
+
+### Priority 2: Pending Orders Screen
+New screen showing all active orders with real-time KDS updates
 
 ---
 
@@ -42,70 +62,81 @@ The `view` tool has path resolution issues and often returns "Path not found" ev
 
 ---
 
-## 🆕 Latest Updates (January 23, 2026)
+## 📱 Device Architecture
 
-### Menu Item Management Screen Updates ✅ COMPLETE
+### Device 1: Server Tablet (Wait Staff)
+- Order taking (dine-in focused)
+- Pending Orders → Mark DELIVERED
+- NO payment processing
 
-**Header Layout:**
-- Close button is just "✕" (no text)
-- Add Item button below Close button (vertical stack)
+### Device 2: Counter POS (Cashier/Expo)
+- Order taking (all types)
+- Pending Orders → PICKED UP / HANDED OFF
+- Payment processing (Stripe)
+- Tip entry (future)
 
-**Item List Display:**
-- Single name display (respects language toggle - no duplicate names)
-- Dietary tags now bilingual (🥬 Vegetariano vs 🥬 Vegetarian based on language)
-- Subcategory shown in pink text under item name
+### Device 3: Manager Station (Future)
+- Tip accounting & allocation
+- Bookkeeping & reports
+- AI Reservations dashboard
+- AI Phone Orders review
 
-**Edit Menu Item Modal - Two-Tier Category Selection:**
-- **Primary Category picker** - Shows all primary categories with icons (horizontal scroll)
-- **Subcategory picker** - Shows only subcategories belonging to selected primary (wrapping pills)
-- When primary changes, subcategory auto-selects first available
-- Subcategory pills use `flexWrap` to prevent truncation
-
-**New Header Layout:**
-```
-┌─────────────────────────────────────────────────────┐
-│ 🍽️ Menu Item Management                      [✕]  │
-│                                          [+ Add Item] │
-└─────────────────────────────────────────────────────┘
-```
-
-### MenuScreen UI Redesign ✅ COMPLETE
-
-**Ribbon Headers Replace Subcategory Pills:**
-- Subcategories display as inline ribbon headers within scrollable menu
-- Format: `══ CEVICHES ══════════════` (red accent, uppercase)
-
-**UpsellBar Component:**
-- AI-powered suggestion bar with three modes: empty-cart, has-items, checkout
-- Color-coded suggestion types (Chef Pick, Popular, High Margin, Upsell)
-
-**Chef Input Panel:**
-- `👨‍🍳 Chef` button in header opens panel for daily specials
+### Device 4: KDS (Kitchen)
+- View incoming orders
+- Bump workflow: Confirm → Start → Done
 
 ---
 
-## 🔴 PRIORITY: Next Items To Do
+## 🔴 PRIORITY: Demo Features (Saturday)
 
-### 1. **Database Cleanup: Remove Redundant "Appetizers" Subcategory**
-- Subcategory "Para Empezar a Enamorarte" (nameEn: "Appetizers") is redundant
-- ID: `d5799042-64f0-47ac-9dbd-2c9b93550297`
-- **12 menu items** currently assigned need reassignment first
-- Items like "Veggie Saltado" are actually entrees, not appetizers
-- Likely should move to Entrees → "Veggie Lovers" or "Wok Me Up"
+### 1. **Upsell Bar Fix** ✅ Plan Ready
+**Problem:** Currently uses hardcoded demo items
+**Solution:** Connect to real menu data from `groupedMenu`
+**File:** `apps/pos/src/screens/MenuScreen.tsx`
+**Details:** See `IMPLEMENTATION_PLAN_DEMO.md` Priority 1
 
-**To list the 12 items:**
-```bash
-curl -s "https://get-order-stack-restaurant-backend.onrender.com/api/restaurant/f2cfe8dd-48f3-4596-ab1e-22a28b23ad38/menu/items" | grep -B5 '"categoryId":"d5799042-64f0-47ac-9dbd-2c9b93550297"'
-```
+### 2. **Pending Orders Screen** ✅ Plan Ready
+**Problem:** No way to track orders or mark as delivered
+**Solution:** New full-screen order tracking with real-time updates
+**Files:** 
+- Create: `apps/pos/src/screens/PendingOrdersScreen.tsx`
+- Modify: `apps/pos/src/contexts/OrderNotificationContext.tsx`
+- Modify: `apps/pos/src/screens/MenuScreen.tsx`
+**Details:** See `IMPLEMENTATION_PLAN_DEMO.md` Priority 2
 
-### 2. **HIGH: Connect UpsellBar to Real AI Backend**
-Create endpoint: `GET /api/restaurant/:id/upsell-suggestions?cartItems=...`
+---
 
-### 3. **HIGH: Persist Chef Picks to Backend**
-Create endpoints for chef picks CRUD
+## 🟡 POST-DEMO: TODO Items
 
-### 4. **MEDIUM: Checkout Mode for UpsellBar**
-Implement `mode="checkout"` display in CheckoutModal
+### AI Features (Option B)
+- [ ] AI Upsell Backend - Intelligent recommendations via Claude API
+- [ ] AI Kitchen Time Estimate - Predict prep time per order
+- [ ] AI Dietary Alert - Detect allergy conflicts
+- [ ] AI Phone Orders - Voice-to-order system
+- [ ] AI Reservations - Automated booking
+
+### Tip Accounting 🔥 High Priority
+- [ ] Tip entry at payment time
+- [ ] End-of-shift tip report
+- [ ] Tip pool configuration
+- [ ] Server tip allocation
+
+### Bookkeeping 🔥 High Priority
+- [ ] Daily sales report
+- [ ] Sales by payment type
+- [ ] Cash drawer tracking
+- [ ] QuickBooks integration
+
+### Device Management
+- [ ] Device registration system
+- [ ] Role-based filtering (Server vs Counter)
+- [ ] PIN authentication
+
+### Other
+- [ ] Persist Chef Picks to backend
+- [ ] Checkout mode for UpsellBar
+- [ ] Screen orientation lock
+- [ ] Offline support
 
 ---
 
@@ -114,23 +145,26 @@ Implement `mode="checkout"` display in CheckoutModal
 ```
 Get-Order-Stack-Restaurant-Mobile/
 ├── apps/
-│   ├── pos/                    # Point of Sale App
+│   ├── pos/                    # Point of Sale / Order Entry App
 │   │   └── src/
 │   │       ├── components/
-│   │       │   ├── CheckoutModal.tsx
+│   │       │   ├── PlaceOrderModal.tsx
 │   │       │   ├── ReceiptPrinter.tsx
 │   │       │   ├── PrimaryCategoryNav.tsx
 │   │       │   ├── UpsellBar.tsx
-│   │       │   └── ChefInputPanel.tsx
-│   │       ├── context/
+│   │       │   ├── ChefInputPanel.tsx
+│   │       │   └── OrderNotificationToast.tsx
+│   │       ├── contexts/
 │   │       │   ├── CartContext.tsx
-│   │       │   └── RestaurantContext.tsx
+│   │       │   └── OrderNotificationContext.tsx  # Order tracking
+│   │       ├── services/
+│   │       │   └── socket.service.ts            # WebSocket
 │   │       └── screens/
-│   │           ├── MenuScreen.tsx
+│   │           ├── MenuScreen.tsx               # Main POS
+│   │           ├── PendingOrdersScreen.tsx      # NEW: Order tracking
 │   │           ├── OrderHistoryScreen.tsx
-│   │           ├── RestaurantSetupScreen.tsx
 │   │           ├── CategoryManagementScreen.tsx
-│   │           └── MenuItemManagementScreen.tsx  # Two-tier category pickers
+│   │           └── MenuItemManagementScreen.tsx
 │   │
 │   └── kds/                    # Kitchen Display System
 │       └── src/
@@ -139,49 +173,35 @@ Get-Order-Stack-Restaurant-Mobile/
 │
 ├── packages/                   # Shared packages (future)
 └── docs/                       # Documentation
+    ├── HANDOFF.md              # This file
+    ├── IMPLEMENTATION_PLAN_DEMO.md  # Demo build plan
+    ├── USER_MANUAL.md          # End-user documentation
+    └── PRODUCT_VISION.md       # Product strategy
 ```
 
 ---
 
-## Key File: MenuItemManagementScreen.tsx
+## Order Status Lifecycle
 
-**Location:** `/apps/pos/src/screens/MenuItemManagementScreen.tsx`
+```
+┌──────────┐    ┌───────────┐    ┌───────────┐    ┌─────────┐    ┌───────────┐
+│ PENDING  │───▶│ CONFIRMED │───▶│ PREPARING │───▶│  READY  │───▶│ COMPLETED │
+│ (new)    │    │ (KDS ack) │    │ (cooking) │    │ (done)  │    │(delivered)│
+└──────────┘    └───────────┘    └───────────┘    └─────────┘    └───────────┘
+     │               │                │               │               │
+   Order           KDS             KDS             KDS            POS
+   Entry         Confirm          Start           Done          Delivered
+```
 
-**Key Features:**
-- `formData.primaryCategoryId` - Tracks selected primary category
-- `formData.categoryId` - Tracks selected subcategory
-- `handlePrimaryCategoryChange()` - Updates primary and resets subcategory
-- `filteredSubcategoriesForForm` - Subcategories filtered by selected primary
-- `subcategoryToPrimaryMap` - Maps subcategory IDs to primary category IDs
-
-**Styles:**
-- `categoryPicker` - Horizontal scroll for primary categories
-- `categoryPickerWrap` - Wrapping layout for subcategories
-
----
-
-## Database Category Structure (Taipa Restaurant)
-
-**Primary Categories:**
-| Name | Slug | Icon | Subcategory Count |
-|------|------|------|-------------------|
-| Aperitivos | appetizers | 🥗 | 3 |
-| Entradas | entrees | 🍽️ | 5 |
-| Bebidas | beverages | 🥤 | 4 |
-| Postres | desserts | 🍰 | 0 |
-| Acompañamientos | sides | 🥕 | 0 |
-
-**Subcategories under Appetizers (needs cleanup):**
-- ❌ "Para Empezar a Enamorarte" / "Appetizers" - REDUNDANT, 12 items need reassignment
-- ✅ "In Ceviche We Trust" / "Ceviches"
-- ✅ "Sopas" / "Soups"
-
-**Subcategories under Entrees:**
-- "Del Mar Su Encanto" / "From The Sea"
-- "Ásame a la parrilla" / "Grilled Dishes"
-- "Wok Me Up" / "Stir Fried"
-- "Saving The Tradition" / "Traditional Peruvian"
-- "Veggie Lovers" / "Veggie Lovers"
+### Timestamps Captured
+| Field | When Set |
+|-------|----------|
+| `createdAt` | Order created |
+| `confirmedAt` | KDS confirms |
+| `preparingAt` | KDS starts cooking |
+| `readyAt` | KDS marks done |
+| `completedAt` | POS marks delivered |
+| `cancelledAt` | Order cancelled |
 
 ---
 
@@ -201,68 +221,18 @@ cd /Users/jam/development/Get-Order-Stack-Restaurant-Mobile
 npm run pos
 ```
 
+**Terminal 3 - KDS App (browser):**
+```bash
+cd /Users/jam/development/Get-Order-Stack-Restaurant-Mobile
+npm run kds
+```
+
 ### Running on iPhone (Expo Go)
 
-**Prerequisites:**
-- Install "Expo Go" from App Store (developer: Nametag, version 54+)
-- First time may prompt to install `@expo/ngrok` - say yes
-
-**Start tunnel server:**
 ```bash
 cd /Users/jam/development/Get-Order-Stack-Restaurant-Mobile
 npm run pos:phone
 ```
-
-**Connect your phone:**
-1. Wait for terminal to show `exp://xxxxx.exp.direct` URL
-2. Open iPhone Camera and scan the QR code in terminal
-3. Tap the banner to open in Expo Go
-4. App hot-reloads as you make changes
-
-**Note:** Keep the tunnel server running while developing. Expo Go will reconnect automatically if you reopen it.
-
-### Building Standalone Apps (No Computer Needed)
-
-**Prerequisites:**
-```bash
-npm install -g eas-cli
-eas login  # Create free Expo account if needed
-```
-
-**Android APK (Free):**
-```bash
-cd /Users/jam/development/Get-Order-Stack-Restaurant-Mobile/apps/pos
-npx eas build --platform android --profile preview
-```
-- Build takes ~10-15 minutes on Expo's servers
-- Download .apk from the link provided
-- Transfer to phone, tap to install
-- Android will warn about "unknown sources" - approve it
-- App is installed permanently - no Expo Go or computer needed
-
-**iOS (Requires $99/year Apple Developer Account):**
-```bash
-cd /Users/jam/development/Get-Order-Stack-Restaurant-Mobile/apps/pos
-npx eas build --platform ios --profile preview
-```
-- Must have Apple Developer account
-- Limited to 100 registered test devices
-- For public distribution, must submit to App Store
-
-**Web App (Free, Works Everywhere):**
-- Already deployed: https://get-order-stack-restaurant-mobile.vercel.app
-- On any device: Open URL → Add to Home Screen
-- No install needed, works on iPhone, Android, tablets
-
----
-
-## 🔧 Current Issues To Fix
-
-### Screen Orientation
-- App should lock to landscape mode on mobile devices
-- Currently not enforcing orientation properly
-
----
 
 ### Kill Running Processes
 ```bash
@@ -280,31 +250,48 @@ lsof -ti:3000 | xargs kill -9
 ### Key Endpoints
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/menu/grouped` | GET | Hierarchical menu |
-| `/primary-categories` | GET/POST | Primary categories |
-| `/menu/categories` | GET/POST | Subcategories |
+| `/menu/grouped` | GET | Hierarchical menu with primary/sub categories |
 | `/menu/items` | GET/POST | Menu items |
-| `/menu/items/:id` | PATCH/DELETE | Update/delete item |
-| `/orders` | GET/POST | Orders |
-| `/orders/:id/profit-insight` | GET | Profit analysis |
+| `/orders` | GET | Orders (supports `?status=pending,confirmed,preparing,ready`) |
+| `/orders` | POST | Create order |
+| `/orders/:id/status` | PATCH | Update status (`changedBy`, `note` supported) |
+| `/orders/:id/profit-insight` | GET | AI profit analysis |
+
+### WebSocket Events
+| Event | Direction | Payload |
+|-------|-----------|---------|
+| `order:new` | Server → Client | Full order object |
+| `order:updated` | Server → Client | Full order object with new status |
 
 ---
 
-## Known Issues / Tech Debt
+## Key Technical Details
 
-1. **Redundant subcategory** - "Appetizers" subcategory under "Appetizers" primary needs deletion
-2. **12 misclassified items** - Need reassignment before subcategory deletion
-3. **UpsellBar** uses demo data - needs real AI backend
-4. **Chef Picks** not persisted - in-memory only
-5. **No offline support**
-6. **No sound notifications** on KDS
+### UpsellBar Current State
+- UI component: ✅ Working
+- Chef Picks: ✅ Connected to menu
+- Popular items: ❌ Hardcoded
+- High-margin items: ❌ Hardcoded
+- **Fix:** See `IMPLEMENTATION_PLAN_DEMO.md`
+
+### WebSocket Service
+- File: `apps/pos/src/services/socket.service.ts`
+- Connects to: `wss://get-order-stack-restaurant-backend.onrender.com`
+- Auto-reconnect: Yes
+- Polling fallback: 30 seconds
+
+### Order Notification Context
+- File: `apps/pos/src/contexts/OrderNotificationContext.tsx`
+- Handles: WebSocket events, active orders, notifications
+- **Needs update** for Pending Orders screen
 
 ---
 
-## Session Transcript
-Previous conversation transcript available at:
-`/mnt/transcripts/2026-01-23-10-28-56-menu-item-management-ui-changes.txt`
+## Session Transcripts
+Previous conversation transcripts available at:
+- `/mnt/transcripts/2026-01-27-*.txt` - Latest session
+- `/mnt/transcripts/2026-01-23-*.txt` - Menu management updates
 
 ---
 
-*Last Updated: January 23, 2026*
+*Last Updated: January 27, 2026*
