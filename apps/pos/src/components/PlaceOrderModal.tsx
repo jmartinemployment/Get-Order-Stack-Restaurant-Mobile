@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useCart, OrderType } from '../context/CartContext';
 import { config } from '../config';
+import { posSocketService } from '../services/socket.service';
 
 const TAX_RATE = 0.065; // 6.5% Florida
 
@@ -133,6 +134,7 @@ export function PlaceOrderModal({ visible, onClose, onSuccess, restaurantId }: P
         },
         orderType,
         orderSource: 'pos',
+        sourceDeviceId: posSocketService.getDeviceId(),
         // Handle table: if it's a real ID use tableId, if manual use tableNumber
         tableId: orderType === 'dine-in' && selectedTableId && !selectedTableId.startsWith('manual:')
           ? selectedTableId
