@@ -12,7 +12,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useCart, CartItem, CartModifier } from '../context/CartContext';
-import { CheckoutModal } from '../components/CheckoutModal';
+import { PlaceOrderModal } from '../components/PlaceOrderModal';
 import { ReceiptModal } from '../components/ReceiptPrinter';
 import { OrderHistoryScreen } from './OrderHistoryScreen';
 import { PrimaryCategoryNav, PrimaryCategory } from '../components/PrimaryCategoryNav';
@@ -27,6 +27,7 @@ interface MenuScreenProps {
   restaurantName: string;
   restaurantLogo?: string;
   onLogout: () => void;
+  onSwitchRestaurant?: () => void;
 }
 
 interface Restaurant {
@@ -34,6 +35,11 @@ interface Restaurant {
   name: string;
   logo?: string;
   location?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  phone?: string;
 }
 
 interface Modifier {
@@ -80,10 +86,13 @@ interface GroupedPrimaryCategory extends PrimaryCategory {
   subcategories: Subcategory[];
 }
 
-export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLogout }: MenuScreenProps) {
+export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLogout, onSwitchRestaurant }: MenuScreenProps) {
   const API_URL = `${config.apiUrl}/api/restaurant/${restaurantId}`;
   const { width: screenWidth } = useWindowDimensions();
-  
+
+  // Log restaurant info on mount
+  console.log('📱 POS Menu Screen:', { restaurantId, restaurantName, API_URL });
+
   // Restaurant data (for logo, etc.)
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   
@@ -104,7 +113,7 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
   // Other modals
   const [showMenu, setShowMenu] = useState(false);
   const [showCart, setShowCart] = useState(false);
-  const [showCheckout, setShowCheckout] = useState(false);
+  const [showPlaceOrder, setShowCheckout] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
   const [receiptData, setReceiptData] = useState<any>(null);
   const [showReceipt, setShowReceipt] = useState(false);
@@ -193,8 +202,8 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
         // Has items: Suggest complementary add-ons
         const suggestions: UpsellSuggestion[] = [];
         
-        // Still show relevant chef picks
-        activeChefPicks.slice(0, 1).forEach(pick => {
+        // Show relevant chef picks as upsell suggestions
+        activeChefPicks.slice(0, 3).forEach(pick => {
           suggestions.push({
             id: `chef-${pick.menuItemId}`,
             menuItemId: pick.menuItemId,
@@ -204,32 +213,7 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
             type: 'chef-pick',
           });
         });
-        
-        // Add complementary items based on cart
-        suggestions.push(
-          {
-            id: 'upsell-1',
-            name: language === 'es' ? 'Chicha Morada' : 'Purple Corn Drink',
-            reason: language === 'es' ? 'Popular con tu pedido' : 'Popular with your order',
-            price: 4.50,
-            type: 'upsell',
-          },
-          {
-            id: 'upsell-2',
-            name: language === 'es' ? 'Choclo con Queso' : 'Corn with Cheese',
-            reason: language === 'es' ? 'Complemento perfecto' : 'Perfect complement',
-            price: 6.00,
-            type: 'upsell',
-          },
-          {
-            id: 'upsell-3',
-            name: language === 'es' ? 'Suspiro Limeño' : 'Peruvian Meringue',
-            reason: language === 'es' ? '🍰 Para terminar' : '🍰 To finish',
-            price: 7.50,
-            type: 'upsell',
-          }
-        );
-        
+
         return suggestions;
       }
     };
@@ -386,7 +370,7 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
     }
   }
 
-  async function handleCheckoutSuccess(orderNumber: string, data: any) {
+  async function handlePlaceOrderSuccess(orderNumber: string, data: any) {
     setShowCheckout(false);
     setOrderSuccess(orderNumber);
     setReceiptData(data);
@@ -760,6 +744,22 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
               >
                 <Text style={styles.menuDrawerAdminText}>👨‍🍳 Chef</Text>
               </TouchableOpacity>
+              {/* Restaurant ID display */}
+              <View style={styles.menuDrawerRestaurantInfo}>
+                <Text style={styles.menuDrawerRestaurantName}>{restaurantName}</Text>
+                <Text style={styles.menuDrawerRestaurantId}>ID: {restaurantId.substring(0, 8)}...</Text>
+              </View>
+              {onSwitchRestaurant && (
+                <TouchableOpacity
+                  style={styles.menuDrawerSwitchBtn}
+                  onPress={() => {
+                    setShowMenu(false);
+                    onSwitchRestaurant();
+                  }}
+                >
+                  <Text style={styles.menuDrawerSwitchText}>Switch Restaurant</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={styles.menuDrawerLogoutBtn}
                 onPress={() => {
@@ -767,7 +767,7 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
                   onLogout();
                 }}
               >
-                <Text style={styles.menuDrawerLogoutText}>Switch Restaurant</Text>
+                <Text style={styles.menuDrawerLogoutText}>Sign Out</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -871,11 +871,11 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
         </View>
       )}
 
-      {/* Checkout Modal */}
-      <CheckoutModal
-        visible={showCheckout}
-        onClose={() => setShowCheckout(false)}
-        onSuccess={handleCheckoutSuccess}
+      {/* Place Order Modal */}
+      <PlaceOrderModal
+        visible={showPlaceOrder}
+        onClose={() => setShowPlaceOrder(false)}
+        onSuccess={handlePlaceOrderSuccess}
         restaurantId={restaurantId}
       />
 
@@ -932,6 +932,14 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
         visible={showReceipt}
         onClose={() => setShowReceipt(false)}
         data={receiptData}
+        restaurantInfo={{
+          name: restaurant?.name || restaurantName,
+          address: restaurant?.address,
+          city: restaurant?.city,
+          state: restaurant?.state,
+          zipCode: restaurant?.zipCode,
+          phone: restaurant?.phone,
+        }}
       />
 
       {/* Order History Screen */}
@@ -1339,15 +1347,42 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
   },
-  menuDrawerLogoutBtn: {
+  menuDrawerRestaurantInfo: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#2a3f5f',
+  },
+  menuDrawerRestaurantName: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  menuDrawerRestaurantId: {
+    color: '#4da6ff',
+    fontSize: 12,
+    fontFamily: 'monospace',
+  },
+  menuDrawerSwitchBtn: {
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 8,
     marginTop: 8,
     backgroundColor: '#0f3460',
   },
+  menuDrawerSwitchText: {
+    color: '#4da6ff',
+    fontSize: 14,
+  },
+  menuDrawerLogoutBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginTop: 8,
+  },
   menuDrawerLogoutText: {
-    color: '#999',
+    color: '#e94560',
     fontSize: 14,
   },
   cartDrawerHeader: {

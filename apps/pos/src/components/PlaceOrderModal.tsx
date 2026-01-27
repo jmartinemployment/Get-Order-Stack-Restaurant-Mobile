@@ -22,27 +22,37 @@ interface Table {
   status: string;
 }
 
-interface CheckoutModalProps {
+interface PlaceOrderModalProps {
   visible: boolean;
   onClose: () => void;
   onSuccess: (orderNumber: string, orderData: any) => void;
   restaurantId: string;
 }
 
-export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: CheckoutModalProps) {
+export function PlaceOrderModal({ visible, onClose, onSuccess, restaurantId }: PlaceOrderModalProps) {
   const API_URL = `${config.apiUrl}/api/restaurant/${restaurantId}`;
   const { state, subtotal, clearCart } = useCart();
-  const [orderType, setOrderType] = useState<OrderType>('pickup');
+  const [orderType, setOrderType] = useState<OrderType>('dine-in');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [tableNumberInput, setTableNumberInput] = useState('');
   const [tables, setTables] = useState<Table[]>([]);
   const [loadingTables, setLoadingTables] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
 
   const tax = subtotal * TAX_RATE;
   const total = subtotal + tax;
+
+  // Reset form when modal opens
+  useEffect(() => {
+    if (visible) {
+      setError(null);
+      setFieldErrors({});
+    }
+  }, [visible]);
 
   useEffect(() => {
     if (visible && orderType === 'dine-in') {
@@ -65,39 +75,72 @@ export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: Che
     }
   }
 
-  async function handleSubmitOrder() {
-    if (!customerName.trim()) {
-      setError('Please enter customer name');
-      return;
+  function validateForm(): boolean {
+    const errors: Record<string, boolean> = {};
+    let errorMessages: string[] = [];
+
+    // Pickup & Delivery require name and phone
+    if (orderType === 'pickup' || orderType === 'delivery') {
+      if (!customerName.trim()) {
+        errors.customerName = true;
+        errorMessages.push('Customer name');
+      }
+      if (!customerPhone.trim()) {
+        errors.customerPhone = true;
+        errorMessages.push('Phone number');
+      }
     }
 
-    if (orderType === 'dine-in' && !selectedTableId) {
-      // Only require table selection if tables are configured
-      if (tables.length > 0) {
-        setError('Please select a table for dine-in orders');
-        return;
+    // Dine-in requires table number
+    if (orderType === 'dine-in') {
+      const hasTable = selectedTableId || tableNumberInput.trim();
+      if (!hasTable) {
+        errors.tableNumber = true;
+        errorMessages.push('Table number');
       }
-      // If no tables configured and no manual entry, that's okay - optional
+    }
+
+    setFieldErrors(errors);
+
+    if (errorMessages.length > 0) {
+      setError(`Required: ${errorMessages.join(', ')}`);
+      return false;
+    }
+
+    return true;
+  }
+
+  async function handleSubmitOrder() {
+    console.log('[PlaceOrder] Button clicked, validating...');
+
+    if (!validateForm()) {
+      console.log('[PlaceOrder] Validation failed');
+      return;
     }
 
     setSubmitting(true);
     setError(null);
 
+    console.log('[PlaceOrder] Starting order submission...');
+    console.log('[PlaceOrder] API URL:', `${API_URL}/orders`);
+
     try {
       const orderData = {
         customerInfo: {
-          firstName: customerName.split(' ')[0],
+          firstName: customerName.split(' ')[0] || 'Guest',
           lastName: customerName.split(' ').slice(1).join(' ') || undefined,
           phone: customerPhone || undefined,
         },
         orderType,
         orderSource: 'pos',
         // Handle table: if it's a real ID use tableId, if manual use tableNumber
-        tableId: orderType === 'dine-in' && selectedTableId && !selectedTableId.startsWith('manual:') 
-          ? selectedTableId 
+        tableId: orderType === 'dine-in' && selectedTableId && !selectedTableId.startsWith('manual:')
+          ? selectedTableId
           : undefined,
-        tableNumber: orderType === 'dine-in' && selectedTableId?.startsWith('manual:') 
-          ? selectedTableId.replace('manual:', '') 
+        tableNumber: orderType === 'dine-in'
+          ? (selectedTableId?.startsWith('manual:')
+              ? selectedTableId.replace('manual:', '')
+              : tableNumberInput || undefined)
           : undefined,
         items: state.items.map(item => ({
           menuItemId: item.menuItemId,
@@ -107,26 +150,34 @@ export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: Che
         })),
       };
 
+      console.log('[PlaceOrder] Order data:', JSON.stringify(orderData, null, 2));
+
       const response = await fetch(`${API_URL}/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(orderData),
       });
 
+      console.log('[PlaceOrder] Response status:', response.status);
+
       if (!response.ok) {
         const err = await response.json();
+        console.log('[PlaceOrder] Error response:', err);
         throw new Error(err.error || 'Failed to create order');
       }
 
       const order = await response.json();
-      
+      console.log('[PlaceOrder] Order created:', order.orderNumber);
+
       // Build receipt data (include orderId for profit insight)
       const receiptData = {
         orderId: order.id,
         orderNumber: order.orderNumber,
         orderType,
-        customerName: customerName.trim(),
-        tableNumber: selectedTableId ? tables.find(t => t.id === selectedTableId)?.tableNumber?.toString() : undefined,
+        customerName: customerName.trim() || 'Guest',
+        tableNumber: selectedTableId
+          ? tables.find(t => t.id === selectedTableId)?.tableNumber?.toString()
+          : tableNumberInput || undefined,
         items: state.items.map(item => ({
           name: item.name,
           quantity: item.quantity,
@@ -139,9 +190,17 @@ export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: Che
         createdAt: new Date(),
       };
 
+      // Reset form
+      setCustomerName('');
+      setCustomerPhone('');
+      setSelectedTableId(null);
+      setTableNumberInput('');
+      setOrderType('dine-in');
+
       clearCart();
       onSuccess(order.orderNumber, receiptData);
     } catch (err) {
+      console.error('[PlaceOrder] Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to submit order');
     } finally {
       setSubmitting(false);
@@ -150,28 +209,40 @@ export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: Che
 
   function handleOrderTypeChange(type: OrderType) {
     setOrderType(type);
+    setError(null);
+    setFieldErrors({});
     if (type !== 'dine-in') {
       setSelectedTableId(null);
+      setTableNumberInput('');
     }
   }
 
   if (!visible) return null;
 
+  const needsCustomerInfo = orderType === 'pickup' || orderType === 'delivery';
+
   return (
     <View style={styles.overlay}>
       <View style={styles.modal}>
         <View style={styles.header}>
-          <Text style={styles.title}>Checkout</Text>
+          <Text style={styles.title}>Place Order</Text>
           <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
             <Text style={styles.closeBtnText}>✕</Text>
           </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.body}>
+          {/* Error Banner */}
+          {error && (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>⚠️ {error}</Text>
+            </View>
+          )}
+
           {/* Order Type */}
           <Text style={styles.sectionTitle}>Order Type</Text>
           <View style={styles.orderTypeRow}>
-            {(['pickup', 'dine-in', 'delivery'] as OrderType[]).map((type) => (
+            {(['dine-in', 'pickup', 'delivery'] as OrderType[]).map((type) => (
               <TouchableOpacity
                 key={type}
                 style={[styles.orderTypeBtn, orderType === type && styles.orderTypeBtnActive]}
@@ -181,7 +252,7 @@ export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: Che
                   {type === 'pickup' && '🥡 '}
                   {type === 'dine-in' && '🍽️ '}
                   {type === 'delivery' && '🚗 '}
-                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                  {type === 'dine-in' ? 'Dine-In' : type.charAt(0).toUpperCase() + type.slice(1)}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -190,18 +261,24 @@ export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: Che
           {/* Table Selection for Dine-in */}
           {orderType === 'dine-in' && (
             <>
-              <Text style={styles.sectionTitle}>Select Table</Text>
+              <Text style={styles.sectionTitle}>
+                Table Number <Text style={styles.required}>*</Text>
+              </Text>
               {loadingTables ? (
                 <ActivityIndicator color="#e94560" style={{ marginVertical: 12 }} />
               ) : tables.length === 0 ? (
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, fieldErrors.tableNumber && styles.inputError]}
                   placeholder="Table Number (e.g., 1, 2, 3)"
                   placeholderTextColor="#666"
                   keyboardType="number-pad"
+                  value={tableNumberInput}
                   onChangeText={(text) => {
-                    // Store as 'manual:NUMBER' to indicate it's not a table ID
-                    setSelectedTableId(text ? `manual:${text}` : null);
+                    setTableNumberInput(text);
+                    if (fieldErrors.tableNumber) {
+                      setFieldErrors(prev => ({ ...prev, tableNumber: false }));
+                      setError(null);
+                    }
                   }}
                 />
               ) : (
@@ -213,8 +290,15 @@ export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: Che
                         styles.tableBtn,
                         selectedTableId === table.id && styles.tableBtnSelected,
                         table.status === 'occupied' && styles.tableBtnOccupied,
+                        fieldErrors.tableNumber && styles.tableBtnError,
                       ]}
-                      onPress={() => setSelectedTableId(table.id)}
+                      onPress={() => {
+                        setSelectedTableId(table.id);
+                        if (fieldErrors.tableNumber) {
+                          setFieldErrors(prev => ({ ...prev, tableNumber: false }));
+                          setError(null);
+                        }
+                      }}
                       disabled={table.status === 'occupied'}
                     >
                       <Text style={[
@@ -233,21 +317,35 @@ export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: Che
             </>
           )}
 
-          {/* Customer Info */}
-          <Text style={styles.sectionTitle}>Customer Info</Text>
+          {/* Customer Info - Required for pickup/delivery */}
+          <Text style={styles.sectionTitle}>
+            Customer Info {needsCustomerInfo && <Text style={styles.required}>*</Text>}
+          </Text>
           <TextInput
-            style={styles.input}
-            placeholder="Customer Name *"
+            style={[styles.input, fieldErrors.customerName && styles.inputError]}
+            placeholder={needsCustomerInfo ? "Customer Name *" : "Customer Name (optional)"}
             placeholderTextColor="#666"
             value={customerName}
-            onChangeText={setCustomerName}
+            onChangeText={(text) => {
+              setCustomerName(text);
+              if (fieldErrors.customerName) {
+                setFieldErrors(prev => ({ ...prev, customerName: false }));
+                setError(null);
+              }
+            }}
           />
           <TextInput
-            style={styles.input}
-            placeholder="Phone (optional)"
+            style={[styles.input, fieldErrors.customerPhone && styles.inputError]}
+            placeholder={needsCustomerInfo ? "Phone Number *" : "Phone (optional)"}
             placeholderTextColor="#666"
             value={customerPhone}
-            onChangeText={setCustomerPhone}
+            onChangeText={(text) => {
+              setCustomerPhone(text);
+              if (fieldErrors.customerPhone) {
+                setFieldErrors(prev => ({ ...prev, customerPhone: false }));
+                setError(null);
+              }
+            }}
             keyboardType="phone-pad"
           />
 
@@ -289,8 +387,6 @@ export function CheckoutModal({ visible, onClose, onSuccess, restaurantId }: Che
               <Text style={styles.grandTotalValue}>${total.toFixed(2)}</Text>
             </View>
           </View>
-
-          {error && <Text style={styles.error}>{error}</Text>}
         </ScrollView>
 
         <View style={styles.footer}>
@@ -358,12 +454,27 @@ const styles = StyleSheet.create({
     padding: 16,
     maxHeight: height * 0.55,
   },
+  errorBanner: {
+    backgroundColor: '#e94560',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  errorBannerText: {
+    color: '#fff',
+    fontWeight: '600',
+    textAlign: 'center',
+    fontSize: 15,
+  },
   sectionTitle: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 12,
     marginTop: 8,
+  },
+  required: {
+    color: '#e94560',
   },
   orderTypeRow: {
     flexDirection: 'row',
@@ -411,6 +522,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#333',
     opacity: 0.5,
   },
+  tableBtnError: {
+    borderColor: '#e94560',
+  },
   tableBtnText: {
     color: '#fff',
     fontWeight: '600',
@@ -431,6 +545,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     marginBottom: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  inputError: {
+    borderColor: '#e94560',
   },
   summaryItem: {
     flexDirection: 'row',
@@ -498,11 +617,6 @@ const styles = StyleSheet.create({
     color: '#e94560',
     fontSize: 20,
     fontWeight: 'bold',
-  },
-  error: {
-    color: '#e94560',
-    textAlign: 'center',
-    marginTop: 12,
   },
   footer: {
     flexDirection: 'row',

@@ -3,8 +3,13 @@ import { SafeAreaView, StyleSheet, ActivityIndicator, View, Text } from 'react-n
 import { useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CartProvider } from './src/context/CartContext';
+import { OrderNotificationProvider } from './src/contexts/OrderNotificationContext';
 import { MenuScreen } from './src/screens/MenuScreen';
-import { RestaurantSetupScreen } from './src/screens/RestaurantSetupScreen';
+import { LoginScreen } from './src/screens/LoginScreen';
+import { RestaurantSelectScreen } from './src/screens/RestaurantSelectScreen';
+import { OrderNotificationToast } from './src/components/OrderNotificationToast';
+import { authService, AuthRestaurant } from './src/services/auth.service';
+import { posSocketService } from './src/services/socket.service';
 import { config } from './src/config';
 
 interface Restaurant {
@@ -20,49 +25,107 @@ interface Restaurant {
   taxRate: number;
 }
 
+type AppState = 'loading' | 'login' | 'selectRestaurant' | 'pos';
+
 const STORAGE_KEY = '@orderstack_restaurant';
 
 export default function App() {
+  const [appState, setAppState] = useState<AppState>('loading');
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [restaurants, setRestaurants] = useState<AuthRestaurant[]>([]);
+  const [userName, setUserName] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSavedRestaurant();
+    initializeApp();
   }, []);
 
-  async function loadSavedRestaurant() {
+  async function initializeApp() {
     try {
-      const saved = await AsyncStorage.getItem(STORAGE_KEY);
-      
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      // Check if we have a saved restaurant selection
+      const savedRestaurant = await AsyncStorage.getItem(STORAGE_KEY);
+
+      if (savedRestaurant) {
+        const parsed = JSON.parse(savedRestaurant);
+
         // Verify restaurant still exists
         const response = await fetch(`${config.apiUrl}/api/restaurant/${parsed.id}`);
         if (response.ok) {
           const data = await response.json();
           setRestaurant(data);
+          // Connect to socket for real-time order updates
+          posSocketService.connect(data.id);
+          setAppState('pos');
+          return;
         } else {
+          // Restaurant no longer valid, clear it
           await AsyncStorage.removeItem(STORAGE_KEY);
         }
       }
+
+      // No saved restaurant, check auth state
+      await authService.init();
+
+      if (authService.isAuthenticated()) {
+        const result = await authService.getCurrentUser();
+        if (result) {
+          setRestaurants(result.restaurants);
+          const user = authService.getUser();
+          setUserName(user?.firstName || user?.email || null);
+          setAppState('selectRestaurant');
+          return;
+        }
+      }
+
+      // Not authenticated
+      setAppState('login');
     } catch (err) {
-      console.error('Error loading restaurant:', err);
-    } finally {
-      setLoading(false);
+      console.error('Error initializing app:', err);
+      setAppState('login');
     }
   }
 
-  async function handleRestaurantSelected(newRestaurant: Restaurant) {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(newRestaurant));
-    setRestaurant(newRestaurant);
+  function handleLoginSuccess(authRestaurants: AuthRestaurant[]) {
+    setRestaurants(authRestaurants);
+    const user = authService.getUser();
+    setUserName(user?.firstName || user?.email || null);
+    setAppState('selectRestaurant');
+  }
+
+  async function handleRestaurantSelected(selectedRestaurant: Restaurant) {
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(selectedRestaurant));
+    setRestaurant(selectedRestaurant);
+    // Connect to socket for real-time order updates
+    posSocketService.connect(selectedRestaurant.id);
+    setAppState('pos');
   }
 
   async function handleLogout() {
+    posSocketService.disconnect();
+    await authService.logout();
     await AsyncStorage.removeItem(STORAGE_KEY);
     setRestaurant(null);
+    setRestaurants([]);
+    setUserName(null);
+    setAppState('login');
   }
 
-  if (loading) {
+  async function handleSwitchRestaurant() {
+    posSocketService.disconnect();
+    await AsyncStorage.removeItem(STORAGE_KEY);
+    setRestaurant(null);
+
+    // Refresh restaurant list
+    const result = await authService.getCurrentUser();
+    if (result) {
+      setRestaurants(result.restaurants);
+      setAppState('selectRestaurant');
+    } else {
+      // Session expired
+      handleLogout();
+    }
+  }
+
+  if (appState === 'loading') {
     return (
       <View style={styles.loadingContainer}>
         <StatusBar style="light" />
@@ -72,28 +135,50 @@ export default function App() {
     );
   }
 
-  if (!restaurant) {
+  if (appState === 'login') {
     return (
       <>
         <StatusBar style="light" />
-        <RestaurantSetupScreen onRestaurantSelected={handleRestaurantSelected} />
+        <LoginScreen onLoginSuccess={handleLoginSuccess} />
       </>
     );
   }
 
-  return (
-    <CartProvider>
-      <SafeAreaView style={styles.container}>
+  if (appState === 'selectRestaurant') {
+    return (
+      <>
         <StatusBar style="light" />
-        <MenuScreen 
-          restaurantId={restaurant.id} 
-          restaurantName={restaurant.name}
-          restaurantLogo={restaurant.logo}
+        <RestaurantSelectScreen
+          restaurants={restaurants}
+          userName={userName}
+          onRestaurantSelected={handleRestaurantSelected}
           onLogout={handleLogout}
         />
-      </SafeAreaView>
-    </CartProvider>
-  );
+      </>
+    );
+  }
+
+  if (restaurant) {
+    return (
+      <OrderNotificationProvider>
+        <CartProvider>
+          <SafeAreaView style={styles.container}>
+            <StatusBar style="light" />
+            <MenuScreen
+              restaurantId={restaurant.id}
+              restaurantName={restaurant.name}
+              restaurantLogo={restaurant.logo}
+              onLogout={handleLogout}
+              onSwitchRestaurant={handleSwitchRestaurant}
+            />
+            <OrderNotificationToast />
+          </SafeAreaView>
+        </CartProvider>
+      </OrderNotificationProvider>
+    );
+  }
+
+  return null;
 }
 
 const styles = StyleSheet.create({

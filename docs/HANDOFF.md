@@ -12,6 +12,20 @@ React Native monorepo containing two tablet applications for restaurant operatio
 
 ---
 
+## 🤖 Claude Tooling Notes
+
+**IMPORTANT:** When working with files in this project, use these tools:
+- **Use `filesystem:read_file`** to read file contents (NOT `view` - it fails intermittently)
+- **Use `filesystem:search_files`** to find files by pattern
+- **Use `filesystem:list_directory`** to explore folder structure
+- **Use `filesystem:write_file`** or `str_replace`** to modify files
+
+The `view` tool has path resolution issues and often returns "Path not found" even when files exist.
+
+**Consider using Code mode** instead of Chat mode for faster iteration on code changes.
+
+---
+
 ## 🚀 Live URLs
 
 | Service | URL | Status |
@@ -28,6 +42,73 @@ React Native monorepo containing two tablet applications for restaurant operatio
 
 ---
 
+## 🆕 Latest Updates (January 23, 2026)
+
+### Menu Item Management Screen Updates ✅ COMPLETE
+
+**Header Layout:**
+- Close button is just "✕" (no text)
+- Add Item button below Close button (vertical stack)
+
+**Item List Display:**
+- Single name display (respects language toggle - no duplicate names)
+- Dietary tags now bilingual (🥬 Vegetariano vs 🥬 Vegetarian based on language)
+- Subcategory shown in pink text under item name
+
+**Edit Menu Item Modal - Two-Tier Category Selection:**
+- **Primary Category picker** - Shows all primary categories with icons (horizontal scroll)
+- **Subcategory picker** - Shows only subcategories belonging to selected primary (wrapping pills)
+- When primary changes, subcategory auto-selects first available
+- Subcategory pills use `flexWrap` to prevent truncation
+
+**New Header Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│ 🍽️ Menu Item Management                      [✕]  │
+│                                          [+ Add Item] │
+└─────────────────────────────────────────────────────┘
+```
+
+### MenuScreen UI Redesign ✅ COMPLETE
+
+**Ribbon Headers Replace Subcategory Pills:**
+- Subcategories display as inline ribbon headers within scrollable menu
+- Format: `══ CEVICHES ══════════════` (red accent, uppercase)
+
+**UpsellBar Component:**
+- AI-powered suggestion bar with three modes: empty-cart, has-items, checkout
+- Color-coded suggestion types (Chef Pick, Popular, High Margin, Upsell)
+
+**Chef Input Panel:**
+- `👨‍🍳 Chef` button in header opens panel for daily specials
+
+---
+
+## 🔴 PRIORITY: Next Items To Do
+
+### 1. **Database Cleanup: Remove Redundant "Appetizers" Subcategory**
+- Subcategory "Para Empezar a Enamorarte" (nameEn: "Appetizers") is redundant
+- ID: `d5799042-64f0-47ac-9dbd-2c9b93550297`
+- **12 menu items** currently assigned need reassignment first
+- Items like "Veggie Saltado" are actually entrees, not appetizers
+- Likely should move to Entrees → "Veggie Lovers" or "Wok Me Up"
+
+**To list the 12 items:**
+```bash
+curl -s "https://get-order-stack-restaurant-backend.onrender.com/api/restaurant/f2cfe8dd-48f3-4596-ab1e-22a28b23ad38/menu/items" | grep -B5 '"categoryId":"d5799042-64f0-47ac-9dbd-2c9b93550297"'
+```
+
+### 2. **HIGH: Connect UpsellBar to Real AI Backend**
+Create endpoint: `GET /api/restaurant/:id/upsell-suggestions?cartItems=...`
+
+### 3. **HIGH: Persist Chef Picks to Backend**
+Create endpoints for chef picks CRUD
+
+### 4. **MEDIUM: Checkout Mode for UpsellBar**
+Implement `mode="checkout"` display in CheckoutModal
+
+---
+
 ## Architecture
 
 ```
@@ -36,22 +117,25 @@ Get-Order-Stack-Restaurant-Mobile/
 │   ├── pos/                    # Point of Sale App
 │   │   └── src/
 │   │       ├── components/
-│   │       │   ├── CheckoutModal.tsx        # Checkout with table selection
-│   │       │   ├── ReceiptPrinter.tsx       # Receipt preview & printing
-│   │       │   └── PrimaryCategoryNav.tsx   # Primary category pills navigation
+│   │       │   ├── CheckoutModal.tsx
+│   │       │   ├── ReceiptPrinter.tsx
+│   │       │   ├── PrimaryCategoryNav.tsx
+│   │       │   ├── UpsellBar.tsx
+│   │       │   └── ChefInputPanel.tsx
 │   │       ├── context/
-│   │       │   ├── CartContext.tsx          # Cart state management
-│   │       │   └── RestaurantContext.tsx    # Dynamic restaurant selection
+│   │       │   ├── CartContext.tsx
+│   │       │   └── RestaurantContext.tsx
 │   │       └── screens/
-│   │           ├── MenuScreen.tsx           # Main POS interface
-│   │           ├── OrderHistoryScreen.tsx   # Past orders view
-│   │           ├── RestaurantSetupScreen.tsx # Restaurant onboarding
-│   │           └── CategoryManagementScreen.tsx # Admin: category management
+│   │           ├── MenuScreen.tsx
+│   │           ├── OrderHistoryScreen.tsx
+│   │           ├── RestaurantSetupScreen.tsx
+│   │           ├── CategoryManagementScreen.tsx
+│   │           └── MenuItemManagementScreen.tsx  # Two-tier category pickers
 │   │
 │   └── kds/                    # Kitchen Display System
 │       └── src/
 │           └── screens/
-│               └── KitchenDisplayScreen.tsx  # Kitchen order board
+│               └── KitchenDisplayScreen.tsx
 │
 ├── packages/                   # Shared packages (future)
 └── docs/                       # Documentation
@@ -59,414 +143,168 @@ Get-Order-Stack-Restaurant-Mobile/
 
 ---
 
-## Features Implemented
+## Key File: MenuItemManagementScreen.tsx
 
-### POS App ✅
-| Feature | Status | Description |
-|---------|--------|-------------|
-| Restaurant Setup | ✅ Complete | Connect to existing or create new restaurant |
-| Menu Display | ✅ Complete | Grid layout with categories, images, prices |
-| **Two-Tier Category Navigation** | ✅ Complete | Primary categories → Subcategories → Items |
-| **Primary Category Pills** | ✅ Complete | Top navigation with icons, bilingual support |
-| **Subcategory Tabs** | ✅ Complete | Filter items within primary category |
-| **Language Toggle** | ✅ Complete | 🇺🇸/🇪🇸 switch for bilingual menus |
-| **Category Management Admin** | ✅ Complete | Create/edit/delete categories, assign subcategories |
-| Cart Management | ✅ Complete | Add, remove, update quantity, clear cart |
-| Modifier Selection | ✅ Complete | Single/multi-select modifiers with prices |
-| Special Instructions | ✅ Complete | Per-item notes (e.g., "no onions") |
-| Table Selection | ✅ Complete | Table picker for dine-in orders |
-| Checkout Flow | ✅ Complete | Customer info, order type, tax calculation |
-| Order Submission | ✅ Complete | Creates order via REST API |
-| Receipt Printing | ✅ Complete | Preview modal with print functionality |
-| Order History | ✅ Complete | View past orders, reprint receipts |
+**Location:** `/apps/pos/src/screens/MenuItemManagementScreen.tsx`
 
-### KDS App ✅
-| Feature | Status | Description |
-|---------|--------|-------------|
-| Live Order Feed | ✅ Complete | Polls API every 5 seconds |
-| 3-Column Layout | ✅ Complete | NEW → COOKING → READY columns |
-| Order Cards | ✅ Complete | Shows items, modifiers, special instructions |
-| Status Bumping | ✅ Complete | Advances order through workflow |
-| Table Display | ✅ Complete | Shows table number for dine-in |
-| Urgent Highlighting | ✅ Complete | Red border for orders >10 min |
-| Manual Refresh | ✅ Complete | Refresh button + auto-polling |
+**Key Features:**
+- `formData.primaryCategoryId` - Tracks selected primary category
+- `formData.categoryId` - Tracks selected subcategory
+- `handlePrimaryCategoryChange()` - Updates primary and resets subcategory
+- `filteredSubcategoriesForForm` - Subcategories filtered by selected primary
+- `subcategoryToPrimaryMap` - Maps subcategory IDs to primary category IDs
+
+**Styles:**
+- `categoryPicker` - Horizontal scroll for primary categories
+- `categoryPickerWrap` - Wrapping layout for subcategories
 
 ---
 
-## 🆕 Recent Updates (January 21, 2026)
+## Database Category Structure (Taipa Restaurant)
 
-### Two-Tier Menu Hierarchy
-Implemented a hierarchical menu structure with primary categories and subcategories:
+**Primary Categories:**
+| Name | Slug | Icon | Subcategory Count |
+|------|------|------|-------------------|
+| Aperitivos | appetizers | 🥗 | 3 |
+| Entradas | entrees | 🍽️ | 5 |
+| Bebidas | beverages | 🥤 | 4 |
+| Postres | desserts | 🍰 | 0 |
+| Acompañamientos | sides | 🥕 | 0 |
 
-**Database Changes:**
-- Added `primary_categories` table with bilingual support (name, nameEn)
-- Added `primaryCategoryId` foreign key to `menu_categories` table
-- Migration: `20260121150000_add_primary_categories`
+**Subcategories under Appetizers (needs cleanup):**
+- ❌ "Para Empezar a Enamorarte" / "Appetizers" - REDUNDANT, 12 items need reassignment
+- ✅ "In Ceviche We Trust" / "Ceviches"
+- ✅ "Sopas" / "Soups"
 
-**New API Endpoints:**
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/primary-categories` | GET | List all primary categories |
-| `/primary-categories` | POST | Create primary category |
-| `/primary-categories/:id` | PATCH | Update primary category |
-| `/primary-categories/:id` | DELETE | Delete primary category |
-| `/menu/categories/:id/assign` | PATCH | Assign subcategory to primary |
-| `/menu/grouped` | GET | Hierarchical menu (primary → sub → items) |
-
-**New Components:**
-- `PrimaryCategoryNav.tsx` - Responsive pill navigation for primary categories
-- `CategoryManagementScreen.tsx` - Full admin UI for managing categories
-
-**UI Flow:**
-```
-┌──────────────────────────────────────────────────────┐
-│ 🍽️ Restaurant    [🇺🇸 EN] [⚙️ Categories] [Switch]    │
-├──────────────────────────────────────────────────────┤
-│ [🥗 Appetizers] [🍽️ Entrees] [🥤 Beverages] [🍰 Desserts] │ ← Primary Pills
-├──────────────────────────────────────────────────────┤
-│ [Ceviches] [Soups] [Salads]              [📋 History] │ ← Subcategory Tabs
-├────────────────────────────────────┬─────────────────┤
-│        Menu Items Grid             │    Cart Panel   │
-└────────────────────────────────────┴─────────────────┘
-```
-
----
-
-## 🔴 PRIORITY: Next Items To Do
-
-### 1. **HIGH: Deploy Backend Changes**
-The primary categories migration and routes need to be deployed to production.
-
-```bash
-cd Get-Order-Stack-Restaurant-Backend
-npx prisma migrate deploy
-npx prisma generate
-npm run build
-git add . && git commit -m "Add primary categories feature"
-git push  # Triggers Render auto-deploy
-```
-
-### 2. **HIGH: Seed Primary Categories for Taipa**
-Run the seed script to create primary categories for the test restaurant:
-
-```bash
-cd Get-Order-Stack-Restaurant-Backend
-npx ts-node scripts/seed-primary-categories.ts
-```
-
-### 3. ~~**HIGH: Deploy KDS App**~~ ✅ COMPLETE
-KDS deployed to: https://get-order-stack-restaurant-mobile-j.vercel.app
-
-### 4. ~~**HIGH: Update KDS for Dynamic Restaurant**~~ ✅ COMPLETE
-KDS now has RestaurantSetupScreen and dynamic restaurant selection.
-
-### 5. **MEDIUM: Menu Item Management Screen**
-Create admin UI for managing menu items within categories:
-- Add/edit/delete menu items
-- Set prices, images, descriptions
-- Assign modifier groups
-- Toggle availability / 86 status
-
-### 6. **MEDIUM: Drag-and-Drop Reordering**
-Allow reordering of:
-- Primary categories (displayOrder)
-- Subcategories within a primary
-- Menu items within a subcategory
-
-### 7. **LOW: Supabase RLS Warning (Known Issue)**
-Supabase Security Advisor flags `public._prisma_migrations` table for RLS. 
-
-**Status:** RLS has been enabled and policy created, but Splinter continues to flag it. This appears to be a false positive.
-
-### 8. **LOW: WebSocket Integration**
-Replace polling with WebSocket for real-time updates:
-- Backend already has WebSocket capability
-- KDS currently polls every 5 seconds
-- Would improve responsiveness and reduce server load
-
----
-
-## Deployment Details
-
-### Backend (Render.com) ✅ DEPLOYED
-- **URL:** https://get-order-stack-restaurant-backend.onrender.com
-- **Health Check:** https://get-order-stack-restaurant-backend.onrender.com/health
-- **Instance:** Free tier (sleeps after 15 min inactivity, ~30-60s cold start)
-
-**Environment Variables Set:**
-| Key | Description |
-|-----|-------------|
-| `NODE_ENV` | `production` |
-| `PORT` | `3000` |
-| `DATABASE_URL` | Supabase pooler connection (port 6543) |
-| `DIRECT_URL` | Supabase direct connection (port 5432) |
-| `ANTHROPIC_API_KEY` | Claude AI API key |
-| `STRIPE_SECRET_KEY` | Stripe test key |
-| `STRIPE_WEBHOOK_SECRET` | Placeholder (webhooks not configured) |
-| `CORS_ORIGINS` | `http://localhost:8081,http://localhost:19006,https://get-order-stack-restaurant-mobile.vercel.app` |
-
-### POS Frontend (Vercel) ✅ DEPLOYED
-- **URL:** https://get-order-stack-restaurant-mobile.vercel.app
-- **Root Directory:** `apps/pos`
-- **Build Command:** `npx expo export --platform web`
-- **Output Directory:** `dist`
-
-**Config Notes:**
-- API URL detection is automatic based on hostname (see `/apps/pos/src/config.ts`)
-- If on localhost → uses `http://localhost:3000`
-- If on Vercel → uses `https://get-order-stack-restaurant-backend.onrender.com`
-
----
-
-## Backend API Reference
-
-**Production Base URL:** `https://get-order-stack-restaurant-backend.onrender.com/api/restaurant/{restaurantId}`
-
-### Menu & Categories
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/menu` | GET | Full menu with categories, items, modifiers |
-| `/menu/grouped` | GET | Hierarchical menu (primary → sub → items) |
-| `/menu/categories` | GET | List subcategories |
-| `/menu/categories` | POST | Create subcategory |
-| `/menu/categories/:id` | PATCH | Update subcategory |
-| `/menu/categories/:id` | DELETE | Delete subcategory |
-| `/menu/categories/:id/assign` | PATCH | Assign to primary category |
-| `/primary-categories` | GET | List primary categories |
-| `/primary-categories` | POST | Create primary category |
-| `/primary-categories/:id` | PATCH | Update primary category |
-| `/primary-categories/:id` | DELETE | Delete primary category |
-
-### Orders
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/orders` | GET | List orders (supports `?limit=50&status=pending`) |
-| `/orders` | POST | Create new order |
-| `/orders/:id/status` | PATCH | Update order status |
-
-### Order Creation Payload
-```json
-{
-  "customerInfo": {
-    "firstName": "John",
-    "lastName": "Doe",
-    "phone": "555-1234"
-  },
-  "orderType": "dine-in",
-  "orderSource": "pos",
-  "tableId": "table-uuid",
-  "items": [
-    {
-      "menuItemId": "item-uuid",
-      "quantity": 2,
-      "specialInstructions": "No onions",
-      "modifiers": [
-        { "modifierId": "modifier-uuid" }
-      ]
-    }
-  ]
-}
-```
-
-### Order Status Flow
-```
-pending → confirmed → preparing → ready → completed
-                                       ↘ cancelled
-```
+**Subcategories under Entrees:**
+- "Del Mar Su Encanto" / "From The Sea"
+- "Ásame a la parrilla" / "Grilled Dishes"
+- "Wok Me Up" / "Stir Fried"
+- "Saving The Tradition" / "Traditional Peruvian"
+- "Veggie Lovers" / "Veggie Lovers"
 
 ---
 
 ## Development Setup
 
-### Prerequisites
-- Node.js 18+
-- Expo CLI (`npm install -g expo-cli`)
-- Backend running on localhost:3000 (or use production URL)
+### Running Locally
 
-### Running POS App Locally
+**Terminal 1 - Backend:**
 ```bash
-cd apps/pos
-npm install
-npm run web    # Browser (recommended for tablet testing)
-npm run ios    # iOS Simulator
-npm run android
+cd /Users/jam/development/Get-Order-Stack-Restaurant-Backend
+npm run dev
 ```
 
-### Running KDS App Locally
+**Terminal 2 - POS App (browser):**
 ```bash
-cd apps/kds
-npm install
-npm run web
+cd /Users/jam/development/Get-Order-Stack-Restaurant-Mobile
+npm run pos
+```
+
+### Running on iPhone (Expo Go)
+
+**Prerequisites:**
+- Install "Expo Go" from App Store (developer: Nametag, version 54+)
+- First time may prompt to install `@expo/ngrok` - say yes
+
+**Start tunnel server:**
+```bash
+cd /Users/jam/development/Get-Order-Stack-Restaurant-Mobile
+npm run pos:phone
+```
+
+**Connect your phone:**
+1. Wait for terminal to show `exp://xxxxx.exp.direct` URL
+2. Open iPhone Camera and scan the QR code in terminal
+3. Tap the banner to open in Expo Go
+4. App hot-reloads as you make changes
+
+**Note:** Keep the tunnel server running while developing. Expo Go will reconnect automatically if you reopen it.
+
+### Building Standalone Apps (No Computer Needed)
+
+**Prerequisites:**
+```bash
+npm install -g eas-cli
+eas login  # Create free Expo account if needed
+```
+
+**Android APK (Free):**
+```bash
+cd /Users/jam/development/Get-Order-Stack-Restaurant-Mobile/apps/pos
+npx eas build --platform android --profile preview
+```
+- Build takes ~10-15 minutes on Expo's servers
+- Download .apk from the link provided
+- Transfer to phone, tap to install
+- Android will warn about "unknown sources" - approve it
+- App is installed permanently - no Expo Go or computer needed
+
+**iOS (Requires $99/year Apple Developer Account):**
+```bash
+cd /Users/jam/development/Get-Order-Stack-Restaurant-Mobile/apps/pos
+npx eas build --platform ios --profile preview
+```
+- Must have Apple Developer account
+- Limited to 100 registered test devices
+- For public distribution, must submit to App Store
+
+**Web App (Free, Works Everywhere):**
+- Already deployed: https://get-order-stack-restaurant-mobile.vercel.app
+- On any device: Open URL → Add to Home Screen
+- No install needed, works on iPhone, Android, tablets
+
+---
+
+## 🔧 Current Issues To Fix
+
+### Screen Orientation
+- App should lock to landscape mode on mobile devices
+- Currently not enforcing orientation properly
+
+---
+
+### Kill Running Processes
+```bash
+pkill -f "expo" && pkill -f "node.*pos"
+lsof -ti:8081 | xargs kill -9
+lsof -ti:3000 | xargs kill -9
 ```
 
 ---
 
-## Technical Notes
+## Backend API Reference
 
-### Styling
-- Uses **React Native StyleSheet** (not Tailwind, Bootstrap, or any CSS library)
-- Styles are JavaScript objects with camelCase properties
-- When rendered to web, generates inline styles or hashed class names
+**Base URL:** `https://get-order-stack-restaurant-backend.onrender.com/api/restaurant/{restaurantId}`
 
-### Cart State Management
-Uses React Context with useReducer pattern. Supports:
-- Adding items with modifiers and special instructions
-- Quantity updates (increment/decrement)
-- Item removal
-- Full cart clear
-
-### Restaurant Selection
-- Uses AsyncStorage to persist selected restaurant
-- RestaurantSetupScreen shown when no restaurant selected
-- Can create new restaurant or connect to existing by ID
-
-### Receipt Printing
-- Web: Opens browser print dialog with formatted HTML
-- Mobile: Placeholder Alert (needs thermal printer SDK integration)
-
-### Tax Calculation
-Currently hardcoded at 6.5% (Florida). Backend supports per-restaurant tax rates with auto-lookup by ZIP code.
-
-### Bilingual Support
-- Primary categories: `name` (Spanish), `nameEn` (English)
-- Subcategories: `name` (Spanish), `nameEn` (English)
-- Menu items: `name`/`nameEn`, `description`/`descriptionEn`
-- **Browser Language Detection:** Auto-detects browser language on load
-  - If browser language starts with 'en' → English
-  - Otherwise → Spanish (default for POS systems)
-- Language toggle in header switches display language
-- `/menu/grouped?lang=en` returns English names when available
-
-### Language Toggle Implementation
-The language toggle had a React state closure bug that was fixed. Key points:
-- Uses lazy initialization: `useState(() => detectBrowserLanguage())`
-- Uses `React.useRef` to capture initial language for first fetch
-- `toggleLanguage()` directly fetches with new language (avoids async state issues)
-- Default fallback is Spanish for restaurant POS use case
-
----
-
-## Database Notes
-
-### Supabase/PostgreSQL
-- Managed via Prisma ORM
-- Connection pooling via Supabase's PgBouncer
-- `DATABASE_URL` uses pooler connection (port 6543)
-- `DIRECT_URL` uses direct connection (port 5432) for migrations
-
-### Key Tables
-| Table | Description |
-|-------|-------------|
-| `restaurants` | Multi-tenant root |
-| `primary_categories` | Top-level menu navigation (NEW) |
-| `menu_categories` | Subcategories within primary categories |
-| `menu_items` | Food/drink items |
-| `modifier_groups` | Groups of modifiers |
-| `modifiers` | Individual modifier options |
-| `orders` | Order records |
-| `order_items` | Items within orders |
-| `order_item_modifiers` | Modifiers on order items |
-| `customers` | Customer records |
-| `restaurant_tables` | Table management |
+### Key Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/menu/grouped` | GET | Hierarchical menu |
+| `/primary-categories` | GET/POST | Primary categories |
+| `/menu/categories` | GET/POST | Subcategories |
+| `/menu/items` | GET/POST | Menu items |
+| `/menu/items/:id` | PATCH/DELETE | Update/delete item |
+| `/orders` | GET/POST | Orders |
+| `/orders/:id/profit-insight` | GET | Profit analysis |
 
 ---
 
 ## Known Issues / Tech Debt
 
-1. **Supabase RLS warning** - Linter false positive on _prisma_migrations (RLS enabled, documented)
-2. ~~**KDS not deployed**~~ ✅ Deployed to https://get-order-stack-restaurant-mobile-j.vercel.app
-3. ~~**KDS hardcoded restaurant ID**~~ ✅ Now uses dynamic restaurant selection
-4. **No offline support** - Orders fail if network unavailable
-5. **No sound notifications** - KDS should beep for new orders
-6. **Receipt printing mobile** - Needs actual printer SDK (Star Micronics, Epson, etc.)
-7. **No authentication** - Anyone with restaurant ID can access
-8. **Render free tier** - Backend sleeps after 15 min, cold start delay
+1. **Redundant subcategory** - "Appetizers" subcategory under "Appetizers" primary needs deletion
+2. **12 misclassified items** - Need reassignment before subcategory deletion
+3. **UpsellBar** uses demo data - needs real AI backend
+4. **Chef Picks** not persisted - in-memory only
+5. **No offline support**
+6. **No sound notifications** on KDS
 
 ---
 
-## Upcoming Features (Demo Target: Jan 31)
-
-1. **Menu Engineering Report** - AI-powered profitability analysis
-2. **POS Upsell Prompts** - Subtle AI suggestions for staff
-3. **AI Sales Insights Dashboard** - Daily performance analysis
-4. **Tablet UI Optimization** - Android tablet testing
+## Session Transcript
+Previous conversation transcript available at:
+`/mnt/transcripts/2026-01-23-10-28-56-menu-item-management-ui-changes.txt`
 
 ---
 
-## Contact / Resources
-
-- **Backend Repo:** Get-Order-Stack-Restaurant-Backend
-- **Mobile Repo:** Get-Order-Stack-Restaurant-Mobile
-- **Product Vision:** See `/docs/PRODUCT_VISION.md`
-- **Interview Guide:** See `/docs/INTERVIEW_GUIDE.md`
-- **Demo Checklist:** See `/docs/PRE_DEMO_CHECKLIST.md`
-
----
-
-## 🆕 Latest Session Updates (January 22, 2026)
-
-### Session Summary
-This session focused on fixing the language toggle feature in the POS MenuScreen. The conversation was compacted mid-session due to context length.
-
-### Language Toggle Bug Fix ✅ COMPLETE
-**Issue:** Language toggle button (EN/ES) wasn't working - clicking it didn't change the displayed menu language.
-
-**Root Cause:** React async state race condition. When `toggleLanguage()` called `setLanguage(newLang)` followed by `fetchGroupedMenu()`, the fetch function read the OLD language value from the closure because React state updates are asynchronous.
-
-**Original Broken Code:**
-```typescript
-const [language, setLanguage] = useState<'es' | 'en'>('en'); // Hardcoded English
-
-useEffect(() => {
-  fetchGroupedMenu(); // Uses 'en' from initial state
-}, []);
-
-function toggleLanguage() {
-  const newLang = language === 'en' ? 'es' : 'en';
-  setLanguage(newLang);
-  fetchGroupedMenu(); // ❌ Still uses OLD language due to closure
-}
-```
-
-**Fix Applied:**
-1. **Changed default language** from `'en'` to `'es'` (Spanish - appropriate for restaurant POS)
-2. **Added browser language detection** using lazy initialization:
-   ```typescript
-   const [language, setLanguage] = useState<'es' | 'en'>(() => {
-     if (typeof navigator !== 'undefined' && navigator.language) {
-       const browserLang = navigator.language.toLowerCase();
-       return browserLang.startsWith('en') ? 'en' : 'es';
-     }
-     return 'es'; // Default to Spanish for POS systems
-   });
-   ```
-3. **Used React.useRef** to capture initial language for first fetch:
-   ```typescript
-   const initialLangRef = React.useRef(language);
-   
-   useEffect(() => {
-     fetchRestaurant();
-     fetchGroupedMenu(initialLangRef.current); // ✅ Uses captured initial value
-   }, []);
-   ```
-4. **toggleLanguage() already had the fix** - it fetches directly with `newLang` parameter
-
-**Files Changed:**
-- `/apps/pos/src/screens/MenuScreen.tsx` - Lines ~107-120
-
-### Testing Instructions
-1. Run `npm run web` in `/apps/pos`
-2. Open browser dev tools console
-3. On load, should see language detection based on browser settings
-4. Click language toggle button - should immediately switch and refetch menu
-5. Menu items should display in the selected language
-
-### Previous Session Context (from transcript)
-The earlier part of this conversation (before compaction) also discussed:
-- Logo display issues (aspect ratios)
-- General UI styling improvements
-- The transcript is available at: `/mnt/transcripts/2026-01-22-13-28-57-logo-display-language-toggle-fix.txt`
-
----
-
-*Last Updated: January 22, 2026*
+*Last Updated: January 23, 2026*

@@ -29,21 +29,43 @@ interface ReceiptData {
   createdAt: Date;
 }
 
+interface RestaurantInfo {
+  name: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  phone?: string;
+}
+
 interface ReceiptModalProps {
   visible: boolean;
   onClose: () => void;
   data: ReceiptData | null;
+  restaurantInfo?: RestaurantInfo;
 }
 
 const TAX_RATE = 0.065;
 
-export function ReceiptModal({ visible, onClose, data }: ReceiptModalProps) {
+export function ReceiptModal({ visible, onClose, data, restaurantInfo }: ReceiptModalProps) {
   if (!visible || !data) return null;
+
+  // Default restaurant info if not provided
+  const restaurant = restaurantInfo || {
+    name: 'Restaurant',
+    address: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    phone: '',
+  };
+
+  const isDineIn = data.orderType.toLowerCase() === 'dine_in' || data.orderType.toLowerCase() === 'dine-in';
 
   const handlePrint = async () => {
     if (Platform.OS === 'web') {
       // For web, open print dialog
-      const printContent = generatePrintHTML(data);
+      const printContent = generatePrintHTML(data, restaurant);
       const printWindow = window.open('', '_blank');
       if (printWindow) {
         printWindow.document.write(printContent);
@@ -71,15 +93,23 @@ export function ReceiptModal({ visible, onClose, data }: ReceiptModalProps) {
         </View>
 
         <ScrollView style={styles.receiptContainer}>
-          <View style={styles.receipt}>
+          <View style={styles.receipt} nativeID="receiptPreview">
             {/* Restaurant Header */}
-            <Text style={styles.restaurantName}>La Cocina Cubana</Text>
-            <Text style={styles.restaurantInfo}>123 Main Street</Text>
-            <Text style={styles.restaurantInfo}>Miami, FL 33101</Text>
-            <Text style={styles.restaurantInfo}>(305) 555-0123</Text>
-            
+            <Text style={styles.restaurantName}>{restaurant.name}</Text>
+            {restaurant.address && (
+              <Text style={styles.restaurantInfoText}>{restaurant.address}</Text>
+            )}
+            {(restaurant.city || restaurant.state || restaurant.zipCode) && (
+              <Text style={styles.restaurantInfoText}>
+                {[restaurant.city, restaurant.state, restaurant.zipCode].filter(Boolean).join(', ')}
+              </Text>
+            )}
+            {restaurant.phone && (
+              <Text style={styles.restaurantInfoText}>{restaurant.phone}</Text>
+            )}
+
             <View style={styles.divider} />
-            
+
             {/* Order Info */}
             <Text style={styles.orderNumber}>Order #{data.orderNumber}</Text>
             <Text style={styles.orderInfo}>
@@ -87,8 +117,10 @@ export function ReceiptModal({ visible, onClose, data }: ReceiptModalProps) {
             </Text>
             <Text style={styles.orderInfo}>
               {data.orderType.toUpperCase()}
-              {data.tableNumber && ` - Table ${data.tableNumber}`}
             </Text>
+            {isDineIn && data.tableNumber && (
+              <Text style={styles.tableInfo}>Table #{data.tableNumber}</Text>
+            )}
             {data.customerName && (
               <Text style={styles.orderInfo}>Customer: {data.customerName}</Text>
             )}
@@ -151,7 +183,9 @@ export function ReceiptModal({ visible, onClose, data }: ReceiptModalProps) {
   );
 }
 
-function generatePrintHTML(data: ReceiptData): string {
+function generatePrintHTML(data: ReceiptData, restaurant: RestaurantInfo): string {
+  const isDineIn = data.orderType.toLowerCase() === 'dine_in' || data.orderType.toLowerCase() === 'dine-in';
+
   const itemsHTML = data.items.map(item => `
     <tr>
       <td>${item.quantity}x ${item.name}${
@@ -160,6 +194,8 @@ function generatePrintHTML(data: ReceiptData): string {
       <td style="text-align:right">$${item.price.toFixed(2)}</td>
     </tr>
   `).join('');
+
+  const addressLine = [restaurant.city, restaurant.state, restaurant.zipCode].filter(Boolean).join(', ');
 
   return `
     <!DOCTYPE html>
@@ -170,6 +206,7 @@ function generatePrintHTML(data: ReceiptData): string {
         body { font-family: monospace; max-width: 300px; margin: 0 auto; padding: 20px; }
         h1 { text-align: center; margin: 0; font-size: 18px; }
         .info { text-align: center; font-size: 12px; color: #666; }
+        .table-info { text-align: center; font-size: 14px; font-weight: bold; margin: 5px 0; }
         hr { border: none; border-top: 1px dashed #ccc; margin: 10px 0; }
         table { width: 100%; font-size: 14px; }
         .total { font-weight: bold; }
@@ -178,12 +215,13 @@ function generatePrintHTML(data: ReceiptData): string {
       </style>
     </head>
     <body>
-      <h1>La Cocina Cubana</h1>
-      <p class="info">123 Main Street<br/>Miami, FL 33101<br/>(305) 555-0123</p>
+      <h1>${restaurant.name}</h1>
+      <p class="info">${restaurant.address ? `${restaurant.address}<br/>` : ''}${addressLine ? `${addressLine}<br/>` : ''}${restaurant.phone || ''}</p>
       <hr/>
       <p><strong>Order #${data.orderNumber}</strong><br/>
       ${new Date(data.createdAt).toLocaleString()}<br/>
-      ${data.orderType.toUpperCase()}${data.tableNumber ? ` - Table ${data.tableNumber}` : ''}<br/>
+      ${data.orderType.toUpperCase()}<br/>
+      ${isDineIn && data.tableNumber ? `<span class="table-info">Table #${data.tableNumber}</span><br/>` : ''}
       ${data.customerName ? `Customer: ${data.customerName}` : ''}</p>
       <hr/>
       <table>
@@ -257,10 +295,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#1a1a2e',
   },
-  restaurantInfo: {
+  restaurantInfoText: {
     fontSize: 12,
     textAlign: 'center',
     color: '#666',
+  },
+  tableInfo: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#1a1a2e',
+    marginTop: 4,
   },
   divider: {
     borderBottomWidth: 1,

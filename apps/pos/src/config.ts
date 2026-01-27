@@ -4,7 +4,11 @@ const extra = Constants.expoConfig?.extra || {};
 
 // Get API URL - check multiple sources
 const getApiUrl = (): string => {
-  // Hardcoded for mobile testing - use production backend
+  // Use local backend for development
+  if (typeof window !== 'undefined' && window.location?.hostname === 'localhost') {
+    return 'http://localhost:3000';
+  }
+  // Production backend
   return 'https://get-order-stack-restaurant-backend.onrender.com';
 };
 

@@ -21,6 +21,8 @@ export function RestaurantSetupScreen({ onRestaurantSelected }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  console.log('🍳 KDS Setup Screen - Waiting for restaurant ID input');
+
   const handleConnect = async () => {
     if (!restaurantId.trim()) {
       setError('Please enter a restaurant ID');

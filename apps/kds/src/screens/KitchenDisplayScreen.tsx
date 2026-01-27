@@ -9,14 +9,17 @@ import {
   ActivityIndicator,
   AppState,
 } from 'react-native';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL, STORAGE_KEYS } from '../config';
+import { kdsSocketService } from '../services/socket.service';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const POLL_INTERVAL = 5000; // 5 seconds
+const POLL_INTERVAL = 30000; // 30 seconds (fallback when WebSocket connected)
 
 interface KitchenDisplayScreenProps {
   restaurantId: string;
   restaurantName: string;
   onSwitchRestaurant: () => void;
+  onLogout?: () => void;
 }
 
 interface OrderItemModifier {
@@ -55,14 +58,16 @@ const ORDER_TYPE_COLORS: Record<string, string> = {
 
 const STATUS_FLOW = ['pending', 'confirmed', 'preparing', 'ready', 'completed'];
 
-export function KitchenDisplayScreen({ restaurantId, restaurantName, onSwitchRestaurant }: KitchenDisplayScreenProps) {
+export function KitchenDisplayScreen({ restaurantId, restaurantName, onSwitchRestaurant, onLogout }: KitchenDisplayScreenProps) {
   const API_URL = `${API_BASE_URL}/api/restaurant/${restaurantId}`;
-  
+
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
   const pollInterval = useRef<NodeJS.Timeout | null>(null);
   const appState = useRef(AppState.currentState);
 
@@ -127,11 +132,71 @@ export function KitchenDisplayScreen({ restaurantId, restaurantName, onSwitchRes
     }
   };
 
-  // Initial load and polling setup
+  // Handle incoming order from WebSocket
+  const handleOrderEvent = useCallback((order: Order) => {
+    if (!order) return;
+
+    setOrders(prevOrders => {
+      // Check if order should be displayed (not completed/cancelled)
+      if (['completed', 'cancelled'].includes(order.status)) {
+        // Remove from list
+        return prevOrders.filter(o => o.id !== order.id);
+      }
+
+      // Transform order to match expected format
+      const transformedOrder = {
+        ...order,
+        items: order.orderItems,
+        customerName: order.customer
+          ? `${order.customer.firstName || ''} ${order.customer.lastName || ''}`.trim()
+          : undefined,
+      };
+
+      // Check if order exists
+      const existingIndex = prevOrders.findIndex(o => o.id === order.id);
+      if (existingIndex >= 0) {
+        // Update existing order
+        const newOrders = [...prevOrders];
+        newOrders[existingIndex] = transformedOrder;
+        return newOrders;
+      } else {
+        // Add new order at the beginning
+        return [transformedOrder, ...prevOrders];
+      }
+    });
+
+    setLastUpdate(new Date());
+  }, []);
+
+  // Initialize WebSocket connection
+  useEffect(() => {
+    // Connect to WebSocket
+    kdsSocketService.connect(restaurantId);
+
+    // Subscribe to order events
+    const unsubscribeOrders = kdsSocketService.onOrderEvent(handleOrderEvent);
+
+    // Subscribe to connection status
+    const unsubscribeConnection = kdsSocketService.onConnectionChange((connected) => {
+      console.log('🍳 KDS - Socket connection:', connected ? 'connected' : 'disconnected');
+      setSocketConnected(connected);
+    });
+
+    // Get device ID for display
+    kdsSocketService.initializeDeviceId().then(id => setDeviceId(id));
+
+    return () => {
+      unsubscribeOrders();
+      unsubscribeConnection();
+      kdsSocketService.disconnect();
+    };
+  }, [restaurantId, handleOrderEvent]);
+
+  // Initial load and polling setup (fallback)
   useEffect(() => {
     fetchOrders(true);
 
-    // Set up polling
+    // Set up polling as fallback (less frequent when WebSocket connected)
     pollInterval.current = setInterval(() => {
       fetchOrders(false);
     }, POLL_INTERVAL);
@@ -140,6 +205,8 @@ export function KitchenDisplayScreen({ restaurantId, restaurantName, onSwitchRes
     const subscription = AppState.addEventListener('change', nextAppState => {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         fetchOrders(false);
+        // Reconnect WebSocket when app becomes active
+        kdsSocketService.connect(restaurantId);
       }
       appState.current = nextAppState;
     });
@@ -150,7 +217,7 @@ export function KitchenDisplayScreen({ restaurantId, restaurantName, onSwitchRes
       }
       subscription.remove();
     };
-  }, [fetchOrders]);
+  }, [fetchOrders, restaurantId]);
 
   // Update clock every second
   useEffect(() => {
@@ -214,11 +281,18 @@ export function KitchenDisplayScreen({ restaurantId, restaurantName, onSwitchRes
         <View style={styles.headerLeft}>
           <Text style={styles.headerTitle}>🍳 Kitchen Display</Text>
           <Text style={styles.restaurantName}>{restaurantName}</Text>
+          <Text style={styles.deviceIdText}>ID: {restaurantId}</Text>
         </View>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTime}>
             {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
+          <View style={styles.connectionStatus}>
+            <View style={[styles.connectionDot, socketConnected ? styles.connectionDotOnline : styles.connectionDotOffline]} />
+            <Text style={styles.connectionText}>
+              {socketConnected ? 'Live' : 'Polling'}
+            </Text>
+          </View>
           {lastUpdate && (
             <Text style={styles.lastUpdate}>
               Updated {lastUpdate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
@@ -237,6 +311,11 @@ export function KitchenDisplayScreen({ restaurantId, restaurantName, onSwitchRes
           <TouchableOpacity style={styles.switchBtn} onPress={onSwitchRestaurant}>
             <Text style={styles.switchBtnText}>Switch</Text>
           </TouchableOpacity>
+          {onLogout && (
+            <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
+              <Text style={styles.logoutBtnText}>Sign Out</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -446,6 +525,12 @@ const styles = StyleSheet.create({
     color: '#888',
     marginTop: 2,
   },
+  deviceIdText: {
+    fontSize: 11,
+    color: '#4da6ff',
+    fontFamily: 'monospace',
+    marginTop: 2,
+  },
   headerCenter: {
     alignItems: 'center',
     flex: 1,
@@ -459,6 +544,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#666',
     marginTop: 2,
+  },
+  connectionStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  connectionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  connectionDotOnline: {
+    backgroundColor: '#4CAF50',
+  },
+  connectionDotOffline: {
+    backgroundColor: '#FF9800',
+  },
+  connectionText: {
+    fontSize: 12,
+    color: '#888',
   },
   headerStats: {
     flexDirection: 'row',
@@ -492,6 +598,18 @@ const styles = StyleSheet.create({
   switchBtnText: {
     fontSize: 14,
     color: '#fff',
+    fontWeight: '600',
+  },
+  logoutBtn: {
+    padding: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e94560',
+  },
+  logoutBtnText: {
+    fontSize: 14,
+    color: '#e94560',
     fontWeight: '600',
   },
   errorBanner: {

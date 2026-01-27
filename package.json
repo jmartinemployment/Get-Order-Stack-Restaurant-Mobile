@@ -9,6 +9,7 @@
   "scripts": {
     "kds": "npm run start --workspace=apps/kds",
     "pos": "npm run start --workspace=apps/pos",
+    "pos:phone": "npm run start --workspace=apps/pos -- --tunnel",
     "kds:android": "npm run android --workspace=apps/kds",
     "pos:android": "npm run android --workspace=apps/pos",
     "build:kds": "npm run build --workspace=apps/kds",
