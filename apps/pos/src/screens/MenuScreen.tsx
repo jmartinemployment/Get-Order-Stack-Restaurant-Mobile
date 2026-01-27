@@ -20,6 +20,8 @@ import { CategoryManagementScreen } from './CategoryManagementScreen';
 import { MenuItemManagementScreen } from './MenuItemManagementScreen';
 import { UpsellBar, UpsellSuggestion } from '../components/UpsellBar';
 import { ChefInputPanel, ChefPick } from '../components/ChefInputPanel';
+import { PendingOrdersScreen } from './PendingOrdersScreen';
+import { useOrderNotifications } from '../contexts/OrderNotificationContext';
 import { config } from '../config';
 
 interface MenuScreenProps {
@@ -141,7 +143,11 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
   const [chefPicks, setChefPicks] = useState<ChefPick[]>([]);
   const [showChefPanel, setShowChefPanel] = useState(false);
 
+  // Pending Orders screen state
+  const [showPendingOrders, setShowPendingOrders] = useState(false);
+
   const { addItem, removeItem, updateQuantity, clearCart, state, subtotal, itemCount } = useCart();
+  const { activeOrderCount, readyOrderCount } = useOrderNotifications();
 
   useEffect(() => {
     fetchRestaurant();
@@ -149,77 +155,80 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
     fetchGroupedMenu('es');
   }, []);
 
-  // Generate upsell suggestions based on cart state and chef picks
-  // In future, this will call an AI endpoint for real recommendations
+  // Generate upsell suggestions based on cart state, chef picks, and real menu data
   useEffect(() => {
     const generateSuggestions = (): UpsellSuggestion[] => {
+      // Flatten all menu items from grouped menu
+      const allItems = groupedMenu
+        .flatMap(primary => primary.subcategories)
+        .flatMap(sub => sub.items);
+
       // Get active chef picks
       const activeChefPicks = chefPicks.filter(p => p.active);
-      
-      if (itemCount === 0) {
-        // Empty cart: Show chef picks, popular items, high-margin starters
-        const suggestions: UpsellSuggestion[] = [];
-        
-        // Add chef picks first
-        activeChefPicks.forEach(pick => {
-          suggestions.push({
-            id: `chef-${pick.menuItemId}`,
-            menuItemId: pick.menuItemId,
-            name: pick.menuItemName,
-            reason: pick.note || (language === 'es' ? 'Recomendado por el chef' : 'Chef recommended'),
-            price: 0, // Would come from menu item lookup
-            type: 'chef-pick',
-          });
-        });
-        
-        // Add demo popular/high-margin items
-        suggestions.push(
-          {
-            id: 'popular-1',
-            name: language === 'es' ? 'Ceviche Clásico' : 'Classic Ceviche',
-            reason: language === 'es' ? '🔥 Más vendido' : '🔥 Best seller',
-            price: 18.00,
-            type: 'popular',
-          },
-          {
-            id: 'margin-1',
-            name: language === 'es' ? 'Pisco Sour' : 'Pisco Sour',
-            reason: language === 'es' ? 'Coctel signature' : 'Signature cocktail',
-            price: 12.00,
-            type: 'high-margin',
-          },
-          {
-            id: 'popular-2',
-            name: language === 'es' ? 'Lomo Saltado' : 'Lomo Saltado',
-            reason: language === 'es' ? 'Favorito de clientes' : 'Customer favorite',
-            price: 24.00,
-            type: 'popular',
-          }
-        );
-        
-        return suggestions;
-      } else {
-        // Has items: Suggest complementary add-ons
-        const suggestions: UpsellSuggestion[] = [];
-        
-        // Show relevant chef picks as upsell suggestions
-        activeChefPicks.slice(0, 3).forEach(pick => {
-          suggestions.push({
-            id: `chef-${pick.menuItemId}`,
-            menuItemId: pick.menuItemId,
-            name: pick.menuItemName,
-            reason: pick.note || (language === 'es' ? 'Recomendado hoy' : 'Recommended today'),
-            price: 0,
-            type: 'chef-pick',
-          });
-        });
 
-        return suggestions;
+      const suggestions: UpsellSuggestion[] = [];
+
+      // 1. Add Chef Picks first (connected to real menu)
+      activeChefPicks.forEach(pick => {
+        const menuItem = allItems.find(item => item.id === pick.menuItemId);
+        suggestions.push({
+          id: `chef-${pick.menuItemId}`,
+          menuItemId: pick.menuItemId,
+          name: pick.menuItemName,
+          reason: pick.note || (language === 'es' ? 'Recomendado por el chef' : 'Chef recommended'),
+          price: menuItem ? Number(menuItem.price) : 0,
+          type: 'chef-pick',
+        });
+      });
+
+      // 2. Add Popular Items (from real menu)
+      const popularItems = allItems
+        .filter(item => item.popular)
+        .filter(item => !activeChefPicks.some(pick => pick.menuItemId === item.id)) // Avoid duplicates
+        .slice(0, 3);
+
+      popularItems.forEach(item => {
+        suggestions.push({
+          id: `popular-${item.id}`,
+          menuItemId: item.id,
+          name: language === 'en' && item.nameEn ? item.nameEn : item.name,
+          reason: language === 'es' ? '🔥 Más vendido' : '🔥 Best seller',
+          price: Number(item.price),
+          type: 'popular',
+        });
+      });
+
+      // 3. Add High-Margin Items (items with price >= $15 as proxy)
+      const highMarginItems = allItems
+        .filter(item => Number(item.price) >= 15)
+        .filter(item => !item.popular) // Don't duplicate popular items
+        .filter(item => !activeChefPicks.some(pick => pick.menuItemId === item.id))
+        .sort((a, b) => Number(b.price) - Number(a.price))
+        .slice(0, 2);
+
+      highMarginItems.forEach(item => {
+        suggestions.push({
+          id: `margin-${item.id}`,
+          menuItemId: item.id,
+          name: language === 'en' && item.nameEn ? item.nameEn : item.name,
+          reason: language === 'es' ? '💰 Alta ganancia' : '💰 High margin',
+          price: Number(item.price),
+          type: 'high-margin',
+        });
+      });
+
+      // Return different suggestions based on cart state
+      if (itemCount === 0) {
+        // Empty cart: Show all suggestions
+        return suggestions.slice(0, 6);
+      } else {
+        // Has items: Prioritize chef picks and complementary items
+        return suggestions.slice(0, 4);
       }
     };
-    
+
     setUpsellSuggestions(generateSuggestions());
-  }, [itemCount, language, chefPicks]);
+  }, [itemCount, language, chefPicks, groupedMenu]);
 
   async function fetchRestaurant() {
     try {
@@ -343,8 +352,22 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
   }
 
   function handleUpsellPress(suggestion: UpsellSuggestion) {
-    // For demo, add as a simple cart item
-    // In production, this would look up the actual menu item by menuItemId
+    if (suggestion.menuItemId) {
+      // Find the full menu item with modifiers
+      const allItems = groupedMenu
+        .flatMap(primary => primary.subcategories)
+        .flatMap(sub => sub.items);
+
+      const menuItem = allItems.find(item => item.id === suggestion.menuItemId);
+
+      if (menuItem) {
+        // Open item detail modal (same as tapping item in menu)
+        handleItemPress(menuItem);
+        return;
+      }
+    }
+
+    // Fallback: add directly to cart (for items without menuItemId)
     const cartItem: CartItem = {
       id: `${suggestion.id}-${Date.now()}`,
       menuItemId: suggestion.menuItemId || suggestion.id,
@@ -717,6 +740,28 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
             </ScrollView>
             {/* Admin options in drawer for small screens */}
             <View style={styles.menuDrawerFooter}>
+              {/* Pending Orders Button */}
+              <TouchableOpacity
+                style={[styles.menuDrawerAdminBtn, styles.pendingOrdersBtn]}
+                onPress={() => {
+                  setShowMenu(false);
+                  setShowPendingOrders(true);
+                }}
+              >
+                <Text style={styles.menuDrawerAdminText}>
+                  {language === 'es' ? 'Ordenes Pendientes' : 'Pending Orders'}
+                  {activeOrderCount > 0 && (
+                    <Text style={styles.pendingBadge}> ({activeOrderCount})</Text>
+                  )}
+                  {readyOrderCount > 0 && (
+                    <Text style={styles.readyBadge}> - {readyOrderCount} {language === 'es' ? 'listos' : 'ready'}</Text>
+                  )}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Divider */}
+              <View style={styles.drawerDivider} />
+
               <TouchableOpacity
                 style={styles.menuDrawerAdminBtn}
                 onPress={() => {
@@ -724,7 +769,7 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
                   setShowMenuItemManagement(true);
                 }}
               >
-                <Text style={styles.menuDrawerAdminText}>🍽️ Items</Text>
+                <Text style={styles.menuDrawerAdminText}>Items</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.menuDrawerAdminBtn}
@@ -971,11 +1016,18 @@ export function MenuScreen({ restaurantId, restaurantName, restaurantLogo, onLog
       <ChefInputPanel
         visible={showChefPanel}
         onClose={() => setShowChefPanel(false)}
-        menuItems={currentSubcategories.flatMap(sub => 
+        menuItems={currentSubcategories.flatMap(sub =>
           sub.items.map(item => ({ id: item.id, name: item.name, price: Number(item.price) }))
         )}
         chefPicks={chefPicks}
         onSaveChefPicks={handleSaveChefPicks}
+        language={language}
+      />
+
+      {/* Pending Orders Screen */}
+      <PendingOrdersScreen
+        visible={showPendingOrders}
+        onClose={() => setShowPendingOrders(false)}
         language={language}
       />
     </View>
@@ -1346,6 +1398,24 @@ const styles = StyleSheet.create({
   menuDrawerAdminText: {
     color: '#fff',
     fontSize: 14,
+  },
+  pendingOrdersBtn: {
+    backgroundColor: '#0f3460',
+    borderWidth: 1,
+    borderColor: '#e94560',
+  },
+  pendingBadge: {
+    color: '#e94560',
+    fontWeight: 'bold',
+  },
+  readyBadge: {
+    color: '#4CAF50',
+    fontWeight: 'bold',
+  },
+  drawerDivider: {
+    height: 1,
+    backgroundColor: '#0f3460',
+    marginVertical: 8,
   },
   menuDrawerRestaurantInfo: {
     marginTop: 16,
