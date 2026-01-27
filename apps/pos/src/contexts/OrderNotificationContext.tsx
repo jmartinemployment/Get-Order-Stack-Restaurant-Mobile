@@ -207,13 +207,23 @@ export function OrderNotificationProvider({ children }: OrderNotificationProvide
   // Subscribe to socket events
   useEffect(() => {
     const unsubscribeOrders = posSocketService.onOrderEvent(handleOrderEvent);
-    const unsubscribeConnection = posSocketService.onConnectionChange(setSocketConnected);
+    const unsubscribeConnection = posSocketService.onConnectionChange((connected) => {
+      setSocketConnected(connected);
+      // Sync restaurantId from socket service when connected
+      // This handles the case where App.tsx connects directly via posSocketService
+      if (connected) {
+        const socketRestaurantId = posSocketService.getRestaurantId();
+        if (socketRestaurantId && socketRestaurantId !== restaurantId) {
+          setRestaurantId(socketRestaurantId);
+        }
+      }
+    });
 
     return () => {
       unsubscribeOrders();
       unsubscribeConnection();
     };
-  }, [handleOrderEvent]);
+  }, [handleOrderEvent, restaurantId]);
 
   // Fetch orders when restaurant connects
   useEffect(() => {
