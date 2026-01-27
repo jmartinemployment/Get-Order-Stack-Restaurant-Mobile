@@ -52,8 +52,8 @@ export default function App() {
         if (response.ok) {
           const data = await response.json();
           setRestaurant(data);
-          // Connect to socket for real-time order updates
-          posSocketService.connect(data.id);
+          // Connect to socket for real-time order updates (await to ensure deviceId is ready)
+          await posSocketService.connect(data.id);
           setAppState('pos');
           return;
         } else {
@@ -94,8 +94,8 @@ export default function App() {
   async function handleRestaurantSelected(selectedRestaurant: Restaurant) {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(selectedRestaurant));
     setRestaurant(selectedRestaurant);
-    // Connect to socket for real-time order updates
-    posSocketService.connect(selectedRestaurant.id);
+    // Connect to socket for real-time order updates (await to ensure deviceId is ready)
+    await posSocketService.connect(selectedRestaurant.id);
     setAppState('pos');
   }
 

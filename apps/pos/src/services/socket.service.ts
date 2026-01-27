@@ -1,4 +1,7 @@
 import { io, Socket } from 'socket.io-client';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Application from 'expo-application';
+import { Platform } from 'react-native';
 import { config } from '../config';
 
 type OrderEventCallback = (order: any, eventType: 'new' | 'updated') => void;
@@ -32,27 +35,90 @@ class POSSocketService {
     return `pos-${uuid}`;
   }
 
-  // Initialize device ID
+  // Get hardware-based device ID
+  private async getHardwareDeviceId(): Promise<string | null> {
+    try {
+      if (Platform.OS === 'android') {
+        // Android: use Android ID (persists across app reinstalls)
+        const androidId = Application.getAndroidId();
+        if (androidId) return `pos-android-${androidId}`;
+      } else if (Platform.OS === 'ios') {
+        // iOS: use identifierForVendor (persists until app uninstall)
+        const iosId = await Application.getIosIdForVendorAsync();
+        if (iosId) return `pos-ios-${iosId}`;
+      } else if (Platform.OS === 'web') {
+        // Web: use localStorage for persistence
+        if (typeof window !== 'undefined' && window.localStorage) {
+          const stored = localStorage.getItem('pos_device_id');
+          if (stored) return stored;
+          // Generate and store a new ID for this browser
+          const webId = `pos-web-${this.generateDeviceId().replace('pos-', '')}`;
+          localStorage.setItem('pos_device_id', webId);
+          return webId;
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('[POS Socket] Error getting hardware device ID:', error);
+      return null;
+    }
+  }
+
+  // Initialize device ID (async - uses hardware ID or falls back to stored/generated)
+  async initializeDeviceIdAsync(): Promise<string> {
+    if (this.deviceId) return this.deviceId;
+
+    try {
+      // First, try to get hardware-based ID
+      const hardwareId = await this.getHardwareDeviceId();
+      if (hardwareId) {
+        this.deviceId = hardwareId;
+        // Store it so we can use sync version later
+        await AsyncStorage.setItem('pos_device_id', this.deviceId);
+        console.log('[POS Socket] Using hardware device ID:', this.deviceId);
+        return this.deviceId;
+      }
+
+      // Fall back to stored ID
+      const stored = await AsyncStorage.getItem('pos_device_id');
+      if (stored) {
+        this.deviceId = stored;
+        console.log('[POS Socket] Using stored device ID:', this.deviceId);
+      } else {
+        // Last resort: generate a random ID
+        this.deviceId = this.generateDeviceId();
+        await AsyncStorage.setItem('pos_device_id', this.deviceId);
+        console.log('[POS Socket] Generated new device ID:', this.deviceId);
+      }
+    } catch (error) {
+      // Fallback to in-memory ID
+      this.deviceId = this.generateDeviceId();
+      console.log('[POS Socket] Fallback device ID:', this.deviceId);
+    }
+    return this.deviceId;
+  }
+
+  // Sync version - returns existing ID (should only be called after connect())
   initializeDeviceId(): string {
     if (!this.deviceId) {
-      // Try to get from localStorage for persistence
+      // This should not happen if connect() was called first
+      // But if it does, get from localStorage directly for web
       if (typeof window !== 'undefined' && window.localStorage) {
         const stored = localStorage.getItem('pos_device_id');
         if (stored) {
           this.deviceId = stored;
-        } else {
-          this.deviceId = this.generateDeviceId();
-          localStorage.setItem('pos_device_id', this.deviceId);
+          return this.deviceId;
         }
-      } else {
-        this.deviceId = this.generateDeviceId();
       }
+      // Last resort: generate temporary ID
+      this.deviceId = this.generateDeviceId();
+      console.warn('[POS Socket] initializeDeviceId called before connect() - using temp ID');
     }
     return this.deviceId;
   }
 
   // Connect to WebSocket server
-  connect(restaurantId: string): void {
+  async connect(restaurantId: string): Promise<void> {
     console.log('[POS Socket] connect() called with restaurantId:', restaurantId);
 
     if (this.socket?.connected && this.restaurantId === restaurantId) {
@@ -64,7 +130,7 @@ class POSSocketService {
     this.disconnect();
 
     this.restaurantId = restaurantId;
-    const deviceId = this.initializeDeviceId();
+    const deviceId = await this.initializeDeviceIdAsync();
     console.log('[POS Socket] Using deviceId:', deviceId);
 
     // Connect to WebSocket

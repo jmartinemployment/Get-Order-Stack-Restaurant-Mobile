@@ -207,9 +207,9 @@ export function OrderNotificationProvider({ children }: OrderNotificationProvide
     setActiveOrders(prev => prev.filter(o => o.id !== orderId));
   }, [restaurantId]);
 
-  const connectToRestaurant = useCallback((id: string) => {
+  const connectToRestaurant = useCallback(async (id: string) => {
     setRestaurantId(id);
-    posSocketService.connect(id);
+    await posSocketService.connect(id);
   }, []);
 
   const disconnect = useCallback(() => {
