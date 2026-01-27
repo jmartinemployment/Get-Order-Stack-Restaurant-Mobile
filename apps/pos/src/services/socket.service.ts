@@ -198,9 +198,12 @@ class POSSocketService {
     return this.socket?.connected ?? false;
   }
 
-  // Get device ID
-  getDeviceId(): string | null {
-    return this.deviceId;
+  // Get device ID (initializes if needed)
+  getDeviceId(): string {
+    if (!this.deviceId) {
+      this.initializeDeviceId();
+    }
+    return this.deviceId!;
   }
 
   // Get current restaurant ID
