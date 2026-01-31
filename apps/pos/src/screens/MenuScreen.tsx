@@ -1750,7 +1750,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   successModal: {
-    width: width * 0.4,
+    width: '100%',
     backgroundColor: '#16213e',
     borderRadius: 16,
     padding: 32,

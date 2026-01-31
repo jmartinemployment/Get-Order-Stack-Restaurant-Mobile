@@ -412,7 +412,7 @@ export function PlaceOrderModal({ visible, onClose, onSuccess, restaurantId }: P
   );
 }
 
-const { width, height } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
   overlay: {
@@ -426,7 +426,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modal: {
-    width: width * 0.5,
+    width: '100%',
     maxHeight: height * 0.85,
     backgroundColor: '#16213e',
     borderRadius: 16,
